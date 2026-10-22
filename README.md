@@ -3,7 +3,26 @@
 **University of Eswatini | Practices in Software Engineering II (CSC491)**  
 **Team:** 4 members &nbsp;·&nbsp; **Project duration:** 5 weeks &nbsp;·&nbsp; **Platform:** Web application
 
-> **Project status:** Requirements and initial system-design documentation have been prepared. The revised ER and UML diagrams are a **proposed design baseline**, not final client approval. Implementation, deployment, and test completion have **not yet been verified** in the available project documents.
+> **Project status:** Requirements and initial system-design documentation have been prepared. The revised ER and UML diagrams are a **proposed design baseline**, not final client approval. An interactive UI prototype and focused functional checks are available under `GMS/UI`. Backend integration, production authentication, and end-to-end acceptance have **not yet been verified**.
+
+## Interactive UI prototype
+
+The **Gymflow** interface is available in [GMS/UI](GMS/UI/README.md). It includes front-desk, manager, member, and public views, with member registration, cash renewals, photo-confirmed entry, checkout, notices, operating hours, and attendance reports.
+
+From the repository root, serve the interface with Python 3:
+
+```bash
+cd GMS/UI
+python3 -m http.server 8000 --directory dist
+```
+
+Open [http://localhost:8000](http://localhost:8000). Use **Preview as** to explore the four roles. To run the focused checks from `GMS/UI`, use Node.js 18 or later:
+
+```bash
+node tests/check-workflows.mjs
+```
+
+The prototype uses HTML, CSS, JavaScript, and browser-local sample data. The planned React/Express/PostgreSQL application is not yet connected to it. Role preview is a demonstration control, not production sign-in. All 15 functional/model/template checks pass; visual browser testing remains unverified.
 
 ## Overview
 
@@ -138,7 +157,7 @@ All four team members are expected to contribute code and review changes where p
 
 ## Setup and local development
 
-**Repository setup instructions are pending actual source code and configuration.** The project documents specify the technologies but do not establish a final repository structure, environment-variable names, database migrations, or executable npm scripts. Avoid copying placeholder commands and treating them as tested.
+**Full application setup is pending frontend/backend integration.** Run the standalone UI prototype using the commands above. The remaining items below describe the planned production setup and do not claim that a React/Express application has been implemented.
 
 Once the implementation is committed, this section should document:
 
@@ -234,3 +253,4 @@ This is a course team project. Use feature branches, pull requests, and peer rev
 ---
 
 *Documentation baseline: Project Plan V2, SRS V1.0 (9 October 2026), and proposed revised ER/UML diagrams (18 October 2026). This README summarizes the intended system and its current documented design; it is not proof of implemented functionality.*
+
