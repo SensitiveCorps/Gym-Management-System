@@ -7,7 +7,7 @@
 
 ## Interactive UI prototype
 
-The **Gymflow** interface is available in [GMS/UI](UI/README.md). It includes front-desk, manager, member, and public views, with member registration, cash renewals, photo-confirmed entry, checkout, notices, operating hours, and attendance reports.
+The team's **selected Gym Management System interface** is available in [GMS/UI](UI/README.md). It contains staff, manager, member and public screens. Requirements fixes are being applied in order, beginning with suspension that preserves member and attendance history.
 
 From the repository root, serve the interface with Python 3:
 
@@ -16,13 +16,13 @@ cd GMS/UI
 python3 -m http.server 8000 --directory dist
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Use **Preview as** to explore the four roles. To run the focused checks from `GMS/UI`, use Node.js 18 or later:
+Open [http://localhost:8000](http://localhost:8000). See the UI README for demo sign-ins and Windows commands. To run the focused checks from `GMS/UI`, use Node.js 18 or later:
 
 ```bash
 node tests/check-workflows.mjs
 ```
 
-The prototype uses HTML, CSS, JavaScript, and browser-local sample data. The planned React/Express/PostgreSQL application is not yet connected to it. Role preview is a demonstration control, not production sign-in. All 15 functional/model/template checks pass; visual browser testing remains unverified.
+The prototype uses HTML, CSS, JavaScript and browser-local sample data. The planned React/Express/PostgreSQL application is not yet connected to it. Demo sign-in and browser role guards are not production security. The 16 focused retention/suspension checks pass; full acceptance and visual browser testing remain unverified. See the [requirements-fix checklist](UI/REQUIREMENTS_FIXES.md) for the remaining work.
 
 ## Overview
 
