@@ -1,6 +1,6 @@
 # Acceptance evidence and remaining checks
 
-The [SRS](../Docs/SRS.md) remains proposed. Automated regression tests establish the behavior described below; they do not approve client policies or certify an unseen production deployment.
+The [SRS](SRS.md) remains proposed. Automated regression tests establish the behavior described below; they do not approve client policies or certify an unseen production deployment.
 
 ## Automated coverage
 
@@ -22,10 +22,9 @@ The [SRS](../Docs/SRS.md) remains proposed. Automated regression tests establish
 | AT-17 | Transaction/retry integration checks, HTTPS enforcement, backup/restore tooling, API documentation and PR review. Deployment, weekly scheduling and observed availability remain open. |
 | AT-18 | Idle expiration and optional AUTO checkout implemented/tested; plan retirement and masked IDs are included. Closing-time policy remains opt-in. |
 
-Commands:
+From the repository root:
 
 ```powershell
-node ../UI/tests/check-workflows.mjs
 npm test
 ```
 

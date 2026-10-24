@@ -1,5 +1,8 @@
 # Gym Management System (GMS)
+
 ## Software Requirements Specification (SRS)
+
+> **Implementation note:** The running application uses the team's selected HTML/CSS/JavaScript interface with Express and PostgreSQL. React references below describe the original proposed stack. See the [project guide](../README.md) and [implementation checklist](IMPLEMENTATION.md) for the current code and evidence. This document's pending approval status is unchanged.
 
 **University of Eswatini — Practices in Software Engineering II (CSC491)**  
 **Version:** 1.1 — **proposed, for team and client review**  
@@ -16,7 +19,7 @@
 | Document identifier | `GMS-SRS` |
 | Source requirements baseline | *Gym_Management_System_SRS.docx* v1.0, 9 October 2026 |
 | Related plan | [Revised Project Plan v3.0](PROJECT_PLAN.md), proposed 18 October 2026 |
-| Related design | `Gym_Management_System_Diagrams_Revised.docx` (when added to `docs/`), [database ERD](../database/ERD.md) |
+| Related design | [revised diagrams](source-documents/Gym_Management_System_Diagrams_Revised.docx), [database ERD](../database/ERD.md) |
 | Database implementation reference | `database/01_schema.sql`, `database/02_logic_and_views.sql` (repository paths) |
 | Document status | Draft for review; requirements and client acceptance not yet signed off |
 | Changes require | GitHub issue, impact review, team agreement, client sign-off when operational rules change |
@@ -73,7 +76,7 @@ The system shall support photo-confirmed entry, reliable subscription/payment re
 - Gym Management System — Project Plan v2.0 and proposed [v3.0](PROJECT_PLAN.md).
 - Gym Management System — SRS v1.0, 9 October 2026.
 - Revised Gym Management System ER/UML diagrams (proposed design).
-- [PostgreSQL database ERD](../database/ERD.md) and `database/README.md` (implementation reference, not acceptance evidence).
+- [PostgreSQL database ERD](../database/ERD.md) and [database guide](../database/README.md) (implementation reference, not acceptance evidence).
 - IEEE 830-1998; ISO/IEC/IEEE 29148:2018 (requirements-documentation references).
 
 ### 1.5 Definitions

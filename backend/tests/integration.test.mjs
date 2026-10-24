@@ -100,7 +100,7 @@ before(async () => {
     '06_payment_previews.sql',
   ]) {
     const sql = await readFile(
-      new URL('../../Database/database/' + name, import.meta.url),
+      new URL('../../database/' + name, import.meta.url),
       'utf8',
     );
     if (engine) await engine.exec(sql);
@@ -1267,7 +1267,7 @@ test('additive migration retains legacy members/payments without inventing snaps
     for (const name of ['01_schema.sql', '02_logic_and_views.sql'])
       await legacy.exec(
         await readFile(
-          new URL('../../Database/database/' + name, import.meta.url),
+          new URL('../../database/' + name, import.meta.url),
           'utf8',
         ),
       );
@@ -1295,7 +1295,7 @@ test('additive migration retains legacy members/payments without inventing snaps
     ])
       await legacy.exec(
         await readFile(
-          new URL('../../Database/database/' + name, import.meta.url),
+          new URL('../../database/' + name, import.meta.url),
           'utf8',
         ),
       );
