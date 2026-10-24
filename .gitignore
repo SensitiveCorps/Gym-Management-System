@@ -1,5 +1,10 @@
 node_modules/
 .env
+.env.*
+!.env.example
 *.log
 coverage/
 backups/
+.DS_Store
+Thumbs.db
+Desktop.ini

@@ -4,7 +4,7 @@ import vm from 'node:vm';
 import test from 'node:test';
 
 const html = readFileSync(
-  new URL('../dist/index.html', import.meta.url),
+  new URL('../public/index.html', import.meta.url),
   'utf8',
 );
 const script = html.match(/<script\b[^>]*>([\s\S]*?)<\/script>/i)?.[1];

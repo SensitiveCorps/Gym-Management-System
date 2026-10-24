@@ -27,7 +27,7 @@ try {
       continue;
     const sql = (
       await readFile(
-        new URL('../../Database/database/' + name, import.meta.url),
+        new URL('../../database/' + name, import.meta.url),
         'utf8',
       )
     )

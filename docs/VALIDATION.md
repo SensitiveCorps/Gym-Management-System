@@ -4,9 +4,10 @@ Synthetic data only. No user database, production deployment or live member reco
 
 | Check | Result |
 | --- | --- |
+| Repository cleanup | Root `npm run setup` and `npm test` pass after the folder moves. SQL, original Word/PDF documents and UI assets match their original Git blobs. Runtime paths and local documentation links were checked. |
 | Node runtime | 24.22.1 |
-| `node GMS/UI/tests/check-workflows.mjs` | 34/34 passing |
-| `npm test` from `GMS/Server` | 40/40 passing using PGlite 0.5.11 |
+| `node frontend/tests/check-workflows.mjs` | 34/34 passing |
+| `npm test` from `backend` | 40/40 passing using PGlite 0.5.11 |
 | Actual selected UI API adapter | Executed in a minimal DOM against the live test Express HTTP server; signed in, searched, reviewed/confirmed registration and renewal, changed selected plans and rejected an edited plan before a new review; zero private localStorage writes. |
 | Migration | Fresh schema through `06_payment_previews.sql` and additive upgrade with existing synthetic member/payment rows tested; legacy data retained without fabricated snapshots/photos. |
 | Existing SQL smoke suite | Pass against the migrated 01/02/04/05/06 application schema; all synthetic rows roll back. |

@@ -1,6 +1,8 @@
-# Gym Management System: connected server
+# Backend
 
 The selected team UI now has an Express/PostgreSQL mode. The same design is served from this process; authentication, authorization, private photos, cash transactions and histories are enforced by the API. The standalone Python-served UI remains a separate synthetic demo.
+
+See the [root quick start](../README.md#run-the-application-in-vs-code) for commands that work from the repository root. The instructions below run directly inside `backend/`. API details and acceptance evidence are in [docs/](../docs/README.md).
 
 ## Start in VS Code on Windows
 
@@ -9,7 +11,7 @@ Install Node.js 22 or newer and PostgreSQL 14 or newer. Create a local database 
 From the **repository root**, open PowerShell and run:
 
 ```powershell
-cd GMS/Server
+cd backend
 npm ci
 Copy-Item .env.example .env
 ```
@@ -41,7 +43,7 @@ Run the Python demo and connected server on different ports if using both. If Po
 - Member history is retained through suspension/re-enable. Public notices show upcoming and current changes. Seven-day gym/area hours and dated overrides are editable and audited; whole-gym closure closes every area.
 - Manager-only reports omit full document IDs/photos. Staff accounts, services, notices, hours and plans have validated server commands.
 
-The frontend retains the selected HTML/CSS/JavaScript design with a separate API adapter; the server is organized into authentication, validation, state projection, action, database and maintenance modules. The earlier planned React port has not been performed; it is not required to use the connected interface.
+The frontend retains the selected HTML/CSS/JavaScript design with a separate API adapter; the server is organized into authentication, validation, state projection, action, database and maintenance modules. No frontend build step is required.
 
 ## Migrations and existing data
 
@@ -65,7 +67,7 @@ Production startup requires `NODE_ENV=production`, an HTTPS `APP_ORIGIN`, and `E
 
 ```powershell
 npm test
-node ../UI/tests/check-workflows.mjs
+node ../frontend/tests/check-workflows.mjs
 ```
 
 The API suite applies the real SQL migrations to an isolated embedded PostgreSQL engine (PGlite), starts Express, and exercises HTTP authentication, privacy, transactions, retries, cash snapshots, audit history and the real UI adapter. It uses synthetic data only.
@@ -98,6 +100,6 @@ Remove-Item Env:RESTORE_DATABASE_URL
 
 Restore refuses a populated target and the application database. It reports member/payment/visit/denial/photo counts for comparison with the source. Connection passwords are passed through the child environment rather than command arguments.
 
-Schedule `node scripts/backup.mjs` weekly in Windows Task Scheduler with `GMS/Server` as **Start in**, and run it before demonstrations. Record the backup path, date, restore result and responsible team member. The repository provides the tooling; a task has not been installed on your computer.
+Schedule `node scripts/backup.mjs` weekly in Windows Task Scheduler with `backend` as **Start in**, and run it before demonstrations. Record the backup path, date, restore result and responsible team member. The repository provides the tooling; a task has not been installed on your computer.
 
-See [ACCEPTANCE.md](ACCEPTANCE.md) for the remaining human/device/deployment evidence.
+See [ACCEPTANCE.md](../docs/ACCEPTANCE.md) for the remaining human/device/deployment evidence.
