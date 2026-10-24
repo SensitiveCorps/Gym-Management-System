@@ -17,6 +17,7 @@ try {
     '02_logic_and_views.sql',
     '04_application.sql',
     '05_workflow_fixes.sql',
+    '06_payment_previews.sql',
   ]) {
     if (
       applied.includes(name) ||

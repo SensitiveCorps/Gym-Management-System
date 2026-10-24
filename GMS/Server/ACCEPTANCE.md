@@ -11,7 +11,7 @@ The [SRS](../Docs/SRS.md) remains proposed. Automated regression tests establish
 | AT-03 | Required identity/photo, image decoding, duplicate identity/receipt rollback, protected bytes/hash. Physical ID inspection remains a staff task. |
 | AT-04 | Latest confirmed payment, separate suspension, retained records and database mutation guards. |
 | AT-05 | Plan input validation, availability, name/price/duration snapshots and UI duration shortcuts. |
-| AT-06 | Proposed inclusive boundary examples, renewal stacking, server calculation and stale-preview rejection. Acceptance awaits D07. |
+| AT-06 | Proposed inclusive boundary examples, renewal stacking, a shared SQL calculation for server previews/confirmation, and rejection of stale dates, plan/member scope and expiry. The connected UI requires review before confirmation. Acceptance awaits D07. |
 | AT-07 | Atomic registration rollback; same request/receipt retry; conflicting receipts and concurrent HTTP confirmation. |
 | AT-08–10 | Required stored photo, explicit authenticated confirmation, all denial categories, one open visit, manual checkout actor/time. |
 | AT-11 | UI expiry-day and under-ten-days calculation; warning components are exercised by the real templates. |

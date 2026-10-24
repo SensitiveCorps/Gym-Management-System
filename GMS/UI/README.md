@@ -31,7 +31,7 @@ To use shared PostgreSQL data, real server sign-in, protected photos and enforce
 
 New UI controls include report privacy, required-photo entry, validated plans with Daily/Weekly/Monthly shortcuts, unavailable-plan empty states, atomic demo saves, member editing/photo replacement, forced temporary-password change, checkout attribution, upcoming notices, gym/area weekly hours and date overrides, and retained notice/hours audits.
 
-Expiry previews now match the database's proposed inclusive policy. Existing purchased dates are not rewritten. The client still needs to approve D07; Monthly is explicitly 30 days.
+In connected mode, registration and renewal use **Review payment**, followed by **Confirm payment**. The preview comes from the server and uses the database date and shared expiry function; changed terms require a new review. The standalone demo calculates its own preview using the same proposed inclusive policy. Existing purchased dates are not rewritten. The client still needs to approve D07; Monthly is explicitly 30 days.
 
 ## Retained member history
 

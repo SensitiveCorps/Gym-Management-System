@@ -12,6 +12,7 @@ All routes are same-origin. Responses use JSON except `/` (selected UI) and the 
 | `GET /api/public` | Public | Public information without refreshing an authenticated idle timer. |
 | `GET /api/members?q=...` | Staff/manager | Name or ID search, at most 50 matches with current payment snapshots. |
 | `GET /api/members/:id` | Staff/manager; member self only | Member data and permitted payment/visit history. A temporary-password member must change it first. |
+| `GET /api/payments/preview?planId=...&memberId=...` | Staff/manager | Read-only payment preview using the gym database date. Omit `memberId` for registration. Returns the complete `expected` object below; creates no member/payment. |
 | `GET /api/members/:id/photo` | Staff/manager | Protected JPEG, `Cache-Control: no-store`; members/public are denied. |
 | `GET /api/manager/reports` | Manager | Internal member reference, names, paid status/expiry/days. Omits document IDs and photographs. |
 | `GET /api/manager/dashboard` | Manager | Database-derived summary, weekly accepted visits and monthly accepted visits. |
@@ -48,7 +49,24 @@ Use `POST /api/actions/:action` with JSON, the session cookie, `X-CSRF-Token` an
 | `messagecancel` | Manager | `id`; retains the row. |
 | `readmessages` | Staff/manager | `{}`; marks only the authenticated actor's addressed messages read. |
 
-`expected` is `{price:number,days:integer,expiryBefore:dateOrNull}` from the displayed payment preview. The API compares it under the member/plan locks before recording new cash. A stale preview returns 409; refresh and reconfirm. A retry of an already recorded receipt returns its original result even if the plan has since been retired.
+For a new sale, first request `GET /api/payments/preview?planId=...` (registration) or add `&memberId=...` (renewal). Display its response to staff, then send that complete object as `expected` on confirmation:
+
+```json
+{
+  "planId": "1",
+  "planName": "Monthly",
+  "price": 250,
+  "days": 30,
+  "memberId": null,
+  "paymentDate": "2026-10-24",
+  "expiryBefore": null,
+  "expiryAfter": "2026-11-22"
+}
+```
+
+Record IDs are strings; dates are `YYYY-MM-DD` in `Africa/Mbabane`. For renewals, `memberId` is the selected member's string ID and `expiryBefore` is their last confirmed payment's expiry (or null). Previewing does not reserve terms or record cash. Preview and confirmation use the same SQL function, `calculate_membership_expiry`.
+
+The API recomputes and compares **every field** under member/plan locks before recording new cash. Missing preview fields return 400. Changed plan name/price/duration, member scope, payment date or expiry returns 409 with no partial records; fetch and display a new preview and explicitly confirm again. Older three-field previews are rejected. The connected UI provides **Review payment**, followed by **Confirm payment**, and keeps entered member details when a preview expires. Use a fresh request key after changing the payload. A retry of an already recorded receipt returns its original result even if the plan has since been retired.
 
 Photos are JPEG/PNG/WebP data URLs, maximum decoded upload 2 MB and 40 million input pixels. The server decodes and normalizes them to JPEG. Passwords are 8–256 characters, stored as Argon2id hashes. Prices are nonnegative with at most two decimals; durations are whole days, 1–3650. The UI's Monthly shortcut means **30 days**, not a calendar-month billing rule.
 

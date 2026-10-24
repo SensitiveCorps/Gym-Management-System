@@ -1,4 +1,5 @@
 import { one, rows } from './database.mjs';
+import { paymentPreview, confirmPreview } from './payments.mjs';
 import {
   UserError,
   text,
@@ -87,7 +88,15 @@ async function scopeId(db, value) {
   await existing(db, 'services', 'service_id', value);
   return id(value);
 }
-async function cash(db, actor, member, selected, receipt, expected) {
+async function cash(
+  db,
+  actor,
+  member,
+  selected,
+  receipt,
+  expected,
+  registration = false,
+) {
   receipt = text(receipt, 'Cash receipt number', 100);
   const previous = await one(
     db,
@@ -95,30 +104,11 @@ async function cash(db, actor, member, selected, receipt, expected) {
     [receipt],
   );
   if (!previous) {
-    const p = await salePlan(db, selected),
-      latest = await one(
-        db,
-        'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE member_id=$1 ORDER BY payment_id DESC LIMIT 1',
-        [member],
-      );
-    if (
-      !expected ||
-      typeof expected.price !== 'number' ||
-      typeof expected.days !== 'number' ||
-      !('expiryBefore' in expected)
-    )
-      throw new UserError(
-        'Review the price, duration and expiry preview before confirming cash.',
-      );
-    if (
-      Number(p.price) !== expected.price ||
-      p.duration_days !== expected.days ||
-      (latest?.expiry || null) !== expected.expiryBefore
-    )
-      throw new UserError(
-        'The plan or membership changed after the preview. Refresh and confirm the new terms before collecting cash.',
-        409,
-      );
+    await salePlan(db, selected);
+    confirmPreview(
+      expected,
+      await paymentPreview(db, selected, registration ? null : String(member)),
+    );
   }
   return (
     await one(db, 'SELECT record_cash_payment($1,$2,$3,$4) AS payment_id', [
@@ -158,6 +148,7 @@ export async function executeAction(db, actor, action, d) {
       d.plan,
       d.receipt,
       d.expected,
+      true,
     );
     return { memberId: String(member.member_id), paymentId: String(payment) };
   }

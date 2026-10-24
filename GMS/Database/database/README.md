@@ -11,6 +11,7 @@
 | `02_logic_and_views.sql` | Database integrity triggers, atomic workflows, public/reporting views. |
 | `04_application.sql` | Additive sessions, private photo bytes, plan snapshots, request deduplication and application metadata. |
 | `05_workflow_fixes.sql` | Preserve purchased terms, safely retry retired plans, require a stored photo and ignore cancelled overrides. |
+| `06_payment_previews.sql` | Use one expiry function for server previews and confirmed cash payments; existing purchased dates remain unchanged. |
 | `03_seed_demo.sql` | **Optional** dummy-only staff, members, plans, hours and future notice. |
 | `tests/01_smoke_tests.sql` | Checks key rules in a transaction that rolls back. |
 | `ERD.md` | Mermaid entity–relationship overview for GitHub. |
@@ -23,7 +24,7 @@
 
 ## Connected application
 
-For the selected UI with server sign-in, use [the Windows/server setup](../../Server/README.md). Its `npm run migrate` initializes a fresh database or adds `04`/`05` to an existing `01`/`02` schema without resetting history. Back up an existing database first. Legacy payments without plan/duration snapshots are labelled accordingly; placeholder photo paths need an authorized image upload before check-in. The SQL-only initialization below still works for studying/testing the base model.
+For the selected UI with server sign-in, use [the Windows/server setup](../../Server/README.md). Its `npm run migrate` initializes a fresh database or adds `04`/`05`/`06` to an existing `01`/`02` schema without resetting history. Back up an existing database first. Legacy payments without plan/duration snapshots are labelled accordingly; placeholder photo paths need an authorized image upload before check-in. The SQL-only initialization below still works for studying/testing the base model.
 
 ## Create and initialize locally
 

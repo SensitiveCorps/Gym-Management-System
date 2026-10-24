@@ -3,6 +3,85 @@ let csrfToken = null,
   serverBusy = false,
   searchSequence = 0;
 const pendingRequests = new Map();
+const paymentPreviews = new WeakMap();
+
+function resetPaymentPreview(form) {
+  if (!form) return;
+  paymentPreviews.delete(form);
+  const summary = form.querySelector(
+    form.dataset.form === 'register' ? '#rg-sum' : '#rn-calc',
+  );
+  if (summary)
+    summary.textContent =
+      'Review the payment to see the price, payment date and new expiry before collecting cash.';
+  const button = form.querySelector('button[type="submit"]');
+  if (button) button.textContent = 'Review payment';
+}
+function paymentChoice(form) {
+  const registration = form.dataset.form === 'register';
+  return {
+    planId: form.querySelector(registration ? '#rg-l' : '#rn-p')?.value,
+    memberId: registration ? null : ui.modal?.id,
+  };
+}
+function paymentPreviewMarkup(preview) {
+  return `<table class="calc"><tbody>
+    <tr><td>Plan</td><td>${esc(preview.planName)}</td></tr>
+    <tr><td>Cash to collect</td><td>${E(preview.price)}</td></tr>
+    <tr><td>Payment date</td><td>${fmtL(preview.paymentDate)}</td></tr>
+    <tr><td>Current expiry</td><td>${preview.expiryBefore ? fmtL(preview.expiryBefore) : 'None'}</td></tr>
+    <tr><td>Duration purchased</td><td>${preview.days} days</td></tr>
+    <tr><td>New expiry</td><td>${fmtL(preview.expiryAfter)}</td></tr>
+    </tbody></table>`;
+}
+async function reviewedPayment(form) {
+  const choice = paymentChoice(form),
+    signature = JSON.stringify(choice);
+  const saved = paymentPreviews.get(form);
+  if (saved?.signature === signature && saved.expected) return saved.expected;
+  const pending = { signature };
+  paymentPreviews.set(form, pending);
+  const button = form.querySelector('button[type="submit"]');
+  serverBusy = true;
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Loading payment preview…';
+  }
+  try {
+    const path =
+      '/payments/preview?planId=' +
+      encodeURIComponent(choice.planId) +
+      (choice.memberId === null
+        ? ''
+        : '&memberId=' + encodeURIComponent(choice.memberId));
+    const expected = await api(path);
+    // Changing plans or closing/replacing the form invalidates an in-flight preview.
+    if (paymentPreviews.get(form) !== pending || form.isConnected === false)
+      return null;
+    if (JSON.stringify(paymentChoice(form)) !== signature) {
+      resetPaymentPreview(form);
+      return null;
+    }
+    paymentPreviews.set(form, { signature, expected });
+    const summary = form.querySelector(
+      form.dataset.form === 'register' ? '#rg-sum' : '#rn-calc',
+    );
+    if (summary) summary.innerHTML = paymentPreviewMarkup(expected);
+    if (button) button.textContent = 'Confirm payment of ' + E(expected.price);
+    setMsg(
+      form,
+      'Review the terms above, then confirm after collecting cash.',
+      'info',
+    );
+  } catch (error) {
+    resetPaymentPreview(form);
+    setMsg(form, error.message);
+  } finally {
+    serverBusy = false;
+    if (button) button.disabled = false;
+  }
+  return null;
+}
 async function api(path, { method = 'GET', body, key } = {}) {
   const response = await fetch('/api' + path, {
     method,
@@ -78,6 +157,11 @@ async function runServer(action, data, form, after) {
     return result;
   } catch (error) {
     if (error.status && error.status < 500) pendingRequests.delete(signature);
+    if (
+      ['register', 'renew'].includes(action) &&
+      [400, 409].includes(error.status)
+    )
+      resetPaymentPreview(form);
     if (error.status === 401) {
       await loadServerState();
       ui.view = 'login';
@@ -306,12 +390,10 @@ async function serverSubmit(f) {
   if (!forms[k]) return;
   const [action, data] = forms[k]();
   if (['register', 'renew'].includes(k)) {
-    const p = S.plans.find((p) => p.id === data.plan);
-    data.expected = {
-      price: p?.price,
-      days: p?.days,
-      expiryBefore: k === 'register' ? null : memExpiry(data.id),
-    };
+    if (serverBusy) return;
+    const expected = await reviewedPayment(f);
+    if (!expected) return;
+    data.expected = expected;
   }
   await runServer(action, data, f, (result) => {
     if (k === 'register') {

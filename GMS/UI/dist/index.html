@@ -757,8 +757,8 @@ function pgRegister(){
    <div class="cols"><div class="fld"><label for="rg-p">Member-chosen password</label><input id="rg-p" type="password" autocomplete="new-password"><span class="hint">The member chooses a password of at least 8 characters.</span></div>
     <div class="fld"><label for="rg-l">Plan</label><select id="rg-l" data-change="regplan">${pl.map(p=>`<option value="${p.id}">${esc(p.name)} · ${E(p.price)} · ${p.days} days</option>`).join('')}</select></div>
     <div class="fld"><label for="rg-r">Cash receipt number</label><input id="rg-r" autocomplete="off" placeholder="e.g. R-2041"></div></div>
-   <div class="msg info" id="rg-sum">${regSum(pl[0])}</div>
-   <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Save member and record payment</button></div></form>`}
+   <div class="card flat" id="rg-sum" aria-live="polite">${API_MODE?'Review the payment to see the price, payment date and new expiry before collecting cash.':regSum(pl[0])}</div>
+   <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">${API_MODE?'Review payment':'Save member and record payment'}</button></div></form>`}
 function regSum(p){return p?`Cash to collect: ${E(p.price)}. Membership will run to ${fmtL(calcExpiry(null,TODAY(),p.days).exp)}.`:''}
 function downscale(file,max,cb){
   if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024){toast('Choose a JPEG, PNG or WebP image no larger than 5 MB.');return}
@@ -786,9 +786,9 @@ function modalMember(m){const mg=ui.session.role==='manager',pays=S.payments.fil
 function modalRenew(){const mo=ui.modal,m=S.members.find(x=>x.id===mo.id),pl=S.plans.filter(p=>p.on),p=pl.find(x=>x.id===mo.plan)||pl[0];if(!m||!p)return '<div class="modal plain"><button class="xbtn" data-act="closemodal" aria-label="Close">'+ic('x')+'</button><div class="mb msg warn" role="alert">No saleable plan is available. Ask the manager to enable a plan before collecting cash.</div></div>';mo.plan=p.id;
   return `<div class="modal plain"><button class="xbtn" data-act="closemodal" aria-label="Close">${ic('x')}</button><form class="mb form" data-form="renew" novalidate><div><span class="eyebrow">Renew membership</span><h2>${esc(fullName(m))}</h2></div>
    <div class="fld"><label for="rn-p">Plan</label><select id="rn-p" data-change="rnplan">${pl.map(x=>`<option value="${x.id}" ${x.id===p.id?'selected':''}>${esc(x.name)} · ${E(x.price)} · ${x.days} days</option>`).join('')}</select></div>
-   <div id="rn-calc">${rnCalc(m,p)}</div>
+   <div id="rn-calc" aria-live="polite">${API_MODE?'Review the payment to see the price, payment date and new expiry before collecting cash.':rnCalc(m,p)}</div>
    <div class="fld"><label for="rn-r">Cash receipt number</label><input id="rn-r" autocomplete="off" placeholder="e.g. R-2042"></div>
-   <div class="msg" role="alert"></div><div class="actions"><button class="btn primary" type="submit">Confirm payment of ${E(p.price)}</button><button class="btn" type="button" data-act="closemodal">Cancel</button></div></form></div>`}
+   <div class="msg" role="alert"></div><div class="actions"><button class="btn primary" type="submit">${API_MODE?'Review payment':'Confirm payment of '+E(p.price)}</button><button class="btn" type="button" data-act="closemodal">Cancel</button></div></form></div>`}
 function rnCalc(m,p){if(!p)return '<p class="msg warn">Choose an available plan.</p>';const cur=memExpiry(m.id),T=TODAY(),c=calcExpiry(cur,T,p.days);
   return `<table class="calc"><tbody><tr><td>Current expiry</td><td>${cur?fmtL(cur)+(cur<T?' (expired)':''):'None'}</td></tr><tr><td>${c.mode==='extend'?'Days added to current expiry':'Days added from today'}</td><td>+${p.days}</td></tr><tr><td>New expiry</td><td>${fmtL(c.exp)}</td></tr></tbody></table>`}
 /* ---------- staff inbox / manager messages ---------- */
@@ -1006,8 +1006,8 @@ document.addEventListener('change',e=>safeAction(()=>{const t=e.target,k=t.datas
   if(k==='regphoto'&&t.files[0])downscale(t.files[0],360,u=>{ui.regPhoto=u;$('#rg-prev').innerHTML=`<img src="${u}" alt="Photo preview">`});
   if(k==='editphoto'&&t.files[0])downscale(t.files[0],360,u=>{ui.editPhoto=u;$('#me-photostatus').textContent='Replacement photo ready'});
   if(k==='svcphoto'&&t.files[0])downscale(t.files[0],900,u=>{ui.draft.photo=u;render()});
-  if(k==='regplan')$('#rg-sum').textContent=regSum(S.plans.find(p=>p.id===t.value));
-  if(k==='rnplan'){ui.modal.plan=t.value;const m=S.members.find(x=>x.id===ui.modal.id),p=S.plans.find(x=>x.id===t.value);$('#rn-calc').innerHTML=rnCalc(m,p);const b=$('[data-form=renew] .btn.primary');if(b)b.textContent=p?'Confirm payment of '+E(p.price):'No plan available'}},e.target.closest?.('form')));
+  if(k==='regplan'){if(API_MODE){resetPaymentPreview(t.closest('form'));return}$('#rg-sum').textContent=regSum(S.plans.find(p=>p.id===t.value))}
+  if(k==='rnplan'){ui.modal.plan=t.value;if(API_MODE){resetPaymentPreview(t.closest('form'));return}const m=S.members.find(x=>x.id===ui.modal.id),p=S.plans.find(x=>x.id===t.value);$('#rn-calc').innerHTML=rnCalc(m,p);const b=$('[data-form=renew] .btn.primary');if(b)b.textContent=p?'Confirm payment of '+E(p.price):'No plan available'}},e.target.closest?.('form')));
 document.addEventListener('submit',e=>safeAction(()=>{e.preventDefault();const f=e.target,k=f.dataset.form;if(!k)return;const v=id=>(f.querySelector('#'+id)||{}).value;const T=TODAY();
   if(API_MODE)return serverSubmit(f);
   if(k==='login')return doLogin(f);
