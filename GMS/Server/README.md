@@ -24,7 +24,7 @@ npm run create-manager -- manager "Gym Manager"
 npm start
 ```
 
-The manager-creation command prompts for a password without displaying it. Open [http://localhost:8000](http://localhost:8000), select **Manager** and use that account. Create staff, plans, services and the approved hours from the manager screens. Staff can then register members with verified IDs, required photos, member-chosen passwords and cash receipt numbers.
+The manager-creation command prompts for a password without displaying it. Open [http://localhost:8000](http://localhost:8000), select **Manager** and use that account. Create staff, plans, services and the approved hours from the manager screens. Staff can then register members with verified IDs, required photos, member-chosen passwords and cash receipt numbers. On registration and renewal, choose **Review payment**, check the server-provided terms, then collect cash and choose **Confirm payment**. Changed terms require another review; reviewing alone saves no records.
 
 There are **no built-in server login credentials**. Do not run the older synthetic SQL seed on a live database. The API supports the Argon2id hashes used by that seed, but its placeholder photo paths are not real images; authorized staff must capture actual protected photos before those dummy members can check in.
 
@@ -35,6 +35,7 @@ Run the Python demo and connected server on different ports if using both. If Po
 - Argon2id password hashes; no passwords/hashes are returned in API state. Temporary member resets force a new password and revoke existing sessions.
 - Random, HttpOnly, SameSite cookies backed by hashed database session tokens, CSRF tokens, origin checks and server-side idle expiration. Staff enablement/roles are rechecked on protected requests.
 - Members receive only their own masked record, payments and visits. Staff searches are bounded to 50 results. Photos are decoded, resized, stripped of metadata, stored as private database bytes and served only to authorized staff/manager.
+- Payment previews use the gym database date and the same SQL expiry function as confirmed payments. Confirmation checks the displayed plan, price, duration, date, member and expiry again under locks.
 - Confirmed cash registration/payment run in one PostgreSQL transaction. Renewals lock the member, calculate expiry on the server, preserve purchased plan/price/duration snapshots, and reject stale previews. Retrying the same request key or receipt cannot extend a membership twice.
 - Check-in requires a stored photo and an explicit authenticated staff decision. Denials use the five SRS reason codes. Manual checkout records both time and the actual exit actor.
 - Member history is retained through suspension/re-enable. Public notices show upcoming and current changes. Seven-day gym/area hours and dated overrides are editable and audited; whole-gym closure closes every area.
@@ -44,7 +45,7 @@ The frontend retains the selected HTML/CSS/JavaScript design with a separate API
 
 ## Migrations and existing data
 
-`npm run migrate` initializes a fresh schema using `01`/`02`, then adds `04_application.sql` and `05_workflow_fixes.sql`. It records successful migrations atomically. On an existing `01`/`02` database it applies only the additive migrations. No reset, member deletion or fabricated financial backfill is performed.
+`npm run migrate` initializes a fresh schema using `01`/`02`, then adds `04_application.sql`, `05_workflow_fixes.sql` and `06_payment_previews.sql`. It records successful migrations atomically. On an existing `01`/`02` database it applies only the additive migrations. No reset, member deletion or fabricated financial backfill is performed. Existing connected installations must rerun `npm run migrate` before starting this version; `06` adds the shared expiry calculation without rewriting purchased dates.
 
 Case-insensitive identity, receipt and plan-name indexes fail safely if old duplicates exist. Resolve those records with the team before rerunning; do not delete historical records to force migration. Existing immutable payments lack name/duration snapshots and are labelled **Legacy payment**/**not recorded** rather than borrowing an edited catalogue value. Existing database photo paths require an authorized photo upload; the API never exposes or reads arbitrary filesystem paths.
 

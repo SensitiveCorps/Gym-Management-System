@@ -12,6 +12,7 @@ import {
 } from './security.mjs';
 import { executeAction, authorize } from './actions.mjs';
 import { applicationState, memberData, reportData } from './state.mjs';
+import { paymentPreview } from './payments.mjs';
 
 export async function createApp(pool, options = {}) {
   const app = express();
@@ -278,6 +279,16 @@ export async function createApp(pool, options = {}) {
   app.get('/api/manager/reports', auth, async (req, res) => {
     authorize(req.actor, 'plans');
     res.json(await reportData(pool));
+  });
+  app.get('/api/payments/preview', auth, async (req, res) => {
+    authorize(req.actor, 'renew');
+    const preview = await transaction(pool, async (db) => {
+      await db.query(
+        'SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY',
+      );
+      return paymentPreview(db, req.query.planId, req.query.memberId ?? null);
+    });
+    res.json(preview);
   });
   app.get('/api/manager/dashboard', auth, async (req, res) => {
     authorize(req.actor, 'plans');

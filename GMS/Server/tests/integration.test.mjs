@@ -50,28 +50,13 @@ async function login(role, username, password = 'StaffPass123!') {
 }
 const action = async (name, body, session = manager, key) => {
   if (['register', 'renew'].includes(name) && body.expected === undefined) {
-    const p = (
-      await query('SELECT price,duration_days FROM plans WHERE plan_id=$1', [
-        body.plan,
-      ])
-    )[0];
-    const latest =
-      name === 'renew'
-        ? (
-            await query(
-              'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE member_id=$1 ORDER BY payment_id DESC LIMIT 1',
-              [body.id],
-            )
-          )[0]
-        : null;
-    body = {
-      ...body,
-      expected: {
-        price: Number(p?.price),
-        days: p?.duration_days,
-        expiryBefore: latest?.expiry || null,
-      },
-    };
+    const preview = await call(
+      '/api/payments/preview?planId=' +
+        encodeURIComponent(body.plan) +
+        (name === 'renew' ? '&memberId=' + encodeURIComponent(body.id) : ''),
+      { session },
+    );
+    body = { ...body, expected: preview.status === 200 ? preview.data : {} };
   }
   return call('/api/actions/' + name, { method: 'POST', body, session, key });
 };
@@ -112,6 +97,7 @@ before(async () => {
     '02_logic_and_views.sql',
     '04_application.sql',
     '05_workflow_fixes.sql',
+    '06_payment_previews.sql',
   ]) {
     const sql = await readFile(
       new URL('../../Database/database/' + name, import.meta.url),
@@ -460,18 +446,17 @@ test('new membership uses inclusive dates, and renewal/retry never adds days twi
     )
   )[0];
   assert.equal(initial.correct, true);
-  const expiryBefore = (
-    await query(
-      'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE member_id=$1 ORDER BY payment_id DESC LIMIT 1',
-      [ids.one],
-    )
-  )[0].expiry;
   const key = randomUUID(),
     payload = {
       id: ids.one,
       plan: ids.plan,
       receipt: 'RENEW-ONCE',
-      expected: { price: 250, days: 30, expiryBefore },
+      expected: (
+        await call(
+          '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.one,
+          { session: staff },
+        )
+      ).data,
     };
   assert.equal((await action('renew', payload, staff, key)).status, 200);
   assert.equal((await action('renew', payload, staff, key)).status, 200);
@@ -945,7 +930,16 @@ test('cash confirmation rejects stale price or expiry previews without recording
       id: ids.one,
       plan: ids.plan,
       receipt: 'STALE-PREVIEW',
-      expected: { price: 1, days: 30, expiryBefore: '1900-01-01' },
+      expected: {
+        ...(
+          await call(
+            '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.one,
+            { session: staff },
+          )
+        ).data,
+        price: 1,
+        expiryBefore: '1900-01-01',
+      },
     },
     staff,
   );
@@ -959,17 +953,16 @@ test('cash confirmation rejects stale price or expiry previews without recording
   assert.equal(omitted.status, 400);
 });
 test('concurrent repeated requests commit one receipt and return the same result', async () => {
-  const expiryBefore = (
-    await query(
-      'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE member_id=$1 ORDER BY payment_id DESC LIMIT 1',
-      [ids.two],
-    )
-  )[0].expiry;
   const payload = {
       id: ids.two,
       plan: ids.plan,
       receipt: 'CONCURRENT-RETRY',
-      expected: { price: 250, days: 30, expiryBefore },
+      expected: (
+        await call(
+          '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.two,
+          { session: staff },
+        )
+      ).data,
     },
     key = randomUUID();
   const result = await Promise.all([
@@ -988,16 +981,15 @@ test('concurrent repeated requests commit one receipt and return the same result
   );
 });
 test('concurrent distinct cash receipts require a refreshed preview after the first renewal', async () => {
-  const expiryBefore = (
-    await query(
-      'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE member_id=$1 ORDER BY payment_id DESC LIMIT 1',
-      [ids.two],
-    )
-  )[0].expiry;
   const common = {
     id: ids.two,
     plan: ids.plan,
-    expected: { price: 250, days: 30, expiryBefore },
+    expected: (
+      await call(
+        '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.two,
+        { session: staff },
+      )
+    ).data,
   };
   const result = await Promise.all([
     action('renew', { ...common, receipt: 'CONCURRENT-A' }, staff),
@@ -1064,7 +1056,7 @@ test('staff password reset invalidates old sessions and old password immediately
   );
   assert.ok(await login('staff', 'resettest', 'Replacement123!'));
 });
-test('real selected UI adapter signs in, searches and registers through HTTP without local storage', async () => {
+test('selected UI reviews and confirms registration/renewal through HTTP without local storage', async () => {
   const shortPlan = String(
     (
       await query(
@@ -1137,12 +1129,19 @@ test('real selected UI adapter signs in, searches and registers through HTTP wit
   const run = (code) => vm.runInContext(code, context, { timeout: 5000 });
   await run(script);
   function form(k, values) {
+    const nodes = new Map();
     return {
       dataset: { form: k },
-      querySelector: (selector) =>
-        selector === '.msg'
-          ? { textContent: '', className: '' }
-          : { value: values[selector.slice(1)] },
+      querySelector: (selector) => {
+        if (!nodes.has(selector))
+          nodes.set(selector, {
+            textContent: '',
+            className: '',
+            innerHTML: '',
+            value: values[selector.slice(1)],
+          });
+        return nodes.get(selector);
+      },
     };
   }
   context.loginForm = form('login', {
@@ -1173,6 +1172,59 @@ test('real selected UI adapter signs in, searches and registers through HTTP wit
         "SELECT COUNT(*)::int AS n FROM payments WHERE receipt_number='UI-ADAPTER-CASH'",
       )
     )[0].n,
+    0,
+    'Review does not collect cash or create a member',
+  );
+  assert.ok(run('paymentPreviews.get(registerForm).expected.expiryAfter'));
+  assert.match(
+    run('registerForm.querySelector("#rg-sum").innerHTML'),
+    /Cash to collect|New expiry/,
+  );
+  assert.equal(
+    run('registerForm.querySelector("button[type=\\"submit\\"]").textContent'),
+    'Confirm payment of E50',
+  );
+  // A quote is tied to the selected plan, and a changed plan name cannot be sold
+  // under the previously displayed terms even when the amount is unchanged.
+  run(`registerForm.querySelector('#rg-l').value='${ids.plan}'`);
+  await run('serverSubmit(registerForm)');
+  assert.equal(
+    run('paymentPreviews.get(registerForm).expected.planId'),
+    ids.plan,
+  );
+  run(`registerForm.querySelector('#rg-l').value='${shortPlan}'`);
+  await run('serverSubmit(registerForm)');
+  await query('UPDATE plans SET plan_name=$2 WHERE plan_id=$1', [
+    shortPlan,
+    'Updated short plan',
+  ]);
+  await run('serverSubmit(registerForm)');
+  assert.equal(run('paymentPreviews.has(registerForm)'), false);
+  assert.equal(run('registerForm.querySelector("#rg-f").value'), 'Adapter');
+  assert.match(
+    run('registerForm.querySelector(".msg").textContent'),
+    /changed after the preview/,
+  );
+  assert.equal(
+    (
+      await query(
+        "SELECT COUNT(*)::int AS n FROM payments WHERE receipt_number='UI-ADAPTER-CASH'",
+      )
+    )[0].n,
+    0,
+  );
+  await run('serverSubmit(registerForm)');
+  assert.equal(
+    run('paymentPreviews.get(registerForm).expected.planName'),
+    'Updated short plan',
+  );
+  await run('serverSubmit(registerForm)');
+  assert.equal(
+    (
+      await query(
+        "SELECT COUNT(*)::int AS n FROM payments WHERE receipt_number='UI-ADAPTER-CASH'",
+      )
+    )[0].n,
     1,
   );
   assert.equal(run('ui.regDone.first'), 'Adapter');
@@ -1183,6 +1235,30 @@ test('real selected UI adapter signs in, searches and registers through HTTP wit
   assert.match(run('ui.ciMsg.text'), /renew soon/);
   await run('A.checkout({dataset:{id:ui.regDone.id}})');
   assert.equal(run('ui.ciMsg.type'), 'info');
+  context.renewForm = form('renew', {
+    'rn-p': shortPlan,
+    'rn-r': 'UI-ADAPTER-RENEW',
+  });
+  run(`ui.modal={t:'renew',id:ui.regDone.id,plan:'${shortPlan}'}`);
+  await run('serverSubmit(renewForm)');
+  const expiry = run('paymentPreviews.get(renewForm).expected.expiryAfter');
+  assert.equal(
+    (
+      await query(
+        "SELECT COUNT(*)::int AS n FROM payments WHERE receipt_number='UI-ADAPTER-RENEW'",
+      )
+    )[0].n,
+    0,
+  );
+  await run('serverSubmit(renewForm)');
+  assert.equal(
+    (
+      await query(
+        "SELECT resulting_expiry_date::text AS expiry FROM payments WHERE receipt_number='UI-ADAPTER-RENEW'",
+      )
+    )[0].expiry,
+    expiry,
+  );
 });
 
 test('additive migration retains legacy members/payments without inventing snapshots or photos', async () => {
@@ -1212,7 +1288,11 @@ test('additive migration retains legacy members/payments without inventing snaps
         'SELECT member_id,amount,resulting_expiry_date FROM payments',
       )
     ).rows;
-    for (const name of ['04_application.sql', '05_workflow_fixes.sql'])
+    for (const name of [
+      '04_application.sql',
+      '05_workflow_fixes.sql',
+      '06_payment_previews.sql',
+    ])
       await legacy.exec(
         await readFile(
           new URL('../../Database/database/' + name, import.meta.url),
@@ -1307,5 +1387,271 @@ test('staff messages respect recipient, read and cancellation history', async ()
       ])
     )[0].cancelled,
     true,
+  );
+});
+
+test('payment preview requires staff access and exposes only payment terms without saving business data', async () => {
+  const path = '/api/payments/preview?planId=' + ids.plan;
+  assert.equal((await call(path)).status, 401);
+  const ownSession = member;
+  assert.equal((await call(path, { session: ownSession })).status, 403);
+  const before = await query(
+    'SELECT (SELECT COUNT(*) FROM payments) AS payments,(SELECT COUNT(*) FROM members) AS members',
+  );
+  const result = await call(path, { session: staff });
+  assert.equal(result.status, 200);
+  assert.deepEqual(
+    Object.keys(result.data).sort(),
+    [
+      'planId',
+      'planName',
+      'price',
+      'days',
+      'memberId',
+      'paymentDate',
+      'expiryBefore',
+      'expiryAfter',
+    ].sort(),
+  );
+  assert.equal(result.data.memberId, null);
+  assert.equal(result.data.expiryBefore, null);
+  assert.equal(
+    result.data.paymentDate,
+    (await query('SELECT CURRENT_DATE::text AS day'))[0].day,
+  );
+  assert.equal((await call(path, { session: manager })).status, 200);
+  assert.deepEqual(
+    await query(
+      'SELECT (SELECT COUNT(*) FROM payments) AS payments,(SELECT COUNT(*) FROM members) AS members',
+    ),
+    before,
+  );
+  assert.equal(
+    (await call('/api/payments/preview', { session: staff })).status,
+    400,
+  );
+  assert.equal(
+    (await call(path + '&memberId=0', { session: staff })).status,
+    400,
+  );
+  assert.equal(
+    (await call(path + '&memberId=999999', { session: staff })).status,
+    404,
+  );
+  assert.equal(
+    (await call('/api/payments/preview?planId=999999', { session: staff }))
+      .status,
+    409,
+  );
+});
+
+test('shared SQL expiry calculation covers inclusive days, expiry-day renewals and leap/month boundaries', async () => {
+  for (const [prior, paid, days, expiry] of [
+    [null, '2026-10-24', 1, '2026-10-24'],
+    [null, '2026-10-24', 7, '2026-10-30'],
+    [null, '2026-10-24', 30, '2026-11-22'],
+    [null, '2024-02-28', 3, '2024-03-01'],
+    ['2026-10-24', '2026-10-24', 1, '2026-10-25'],
+    ['2026-10-23', '2026-10-24', 1, '2026-10-24'],
+    ['2026-12-31', '2026-10-24', 7, '2027-01-07'],
+  ]) {
+    assert.equal(
+      (
+        await query(
+          'SELECT calculate_membership_expiry($1::date,$2::date,$3::integer)::text AS expiry',
+          [prior, paid, days],
+        )
+      )[0].expiry,
+      expiry,
+    );
+  }
+  await assert.rejects(
+    query("SELECT calculate_membership_expiry(NULL,'2026-10-24',0)"),
+  );
+});
+
+test('confirmation rejects changed dates, result, plan and member scope without recording cash', async () => {
+  const preview = (
+    await call(
+      '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.two,
+      { session: staff },
+    )
+  ).data;
+  const count = await query('SELECT COUNT(*) AS n FROM payments');
+  for (const changed of [
+    { paymentDate: '2000-01-01' },
+    { expiryAfter: '2099-01-01' },
+    { expiryBefore: null },
+    { planId: '999999' },
+    { memberId: ids.one },
+    { planName: 'An edited plan name' },
+    { price: preview.price + 1 },
+    { days: preview.days + 1 },
+  ]) {
+    const result = await action(
+      'renew',
+      {
+        id: ids.two,
+        plan: ids.plan,
+        receipt: 'REJECTED-PREVIEW',
+        expected: { ...preview, ...changed },
+      },
+      staff,
+    );
+    assert.equal(result.status, 409, JSON.stringify(changed));
+  }
+  const { paymentDate, ...incomplete } = preview;
+  assert.equal(
+    (
+      await action(
+        'renew',
+        {
+          id: ids.two,
+          plan: ids.plan,
+          receipt: 'INCOMPLETE-PREVIEW',
+          expected: incomplete,
+        },
+        staff,
+      )
+    ).status,
+    400,
+  );
+  assert.deepEqual(await query('SELECT COUNT(*) AS n FROM payments'), count);
+});
+
+test('a plan renamed after preview requires a new review even if its price and days did not change', async () => {
+  const preview = (
+    await call(
+      '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.two,
+      { session: staff },
+    )
+  ).data;
+  const payload = {
+    id: ids.two,
+    plan: ids.plan,
+    receipt: 'RENAMED-PREVIEW',
+    expected: preview,
+  };
+  try {
+    await query('UPDATE plans SET plan_name=$2 WHERE plan_id=$1', [
+      ids.plan,
+      'Changed after review',
+    ]);
+    assert.equal((await action('renew', payload, staff)).status, 409);
+    assert.equal(
+      (
+        await query(
+          "SELECT COUNT(*)::int AS n FROM payments WHERE receipt_number='RENAMED-PREVIEW'",
+        )
+      )[0].n,
+      0,
+    );
+  } finally {
+    await query('UPDATE plans SET plan_name=$2 WHERE plan_id=$1', [
+      ids.plan,
+      preview.planName,
+    ]);
+  }
+});
+
+test('confirmed renewals and registrations save exactly the server preview and retries survive plan retirement', async () => {
+  const preview = (
+    await call(
+      '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.two,
+      { session: staff },
+    )
+  ).data;
+  const payload = {
+    id: ids.two,
+    plan: ids.plan,
+    receipt: 'SERVER-PREVIEW-RENEW',
+    expected: preview,
+  };
+  const response = await action('renew', payload, staff);
+  assert.equal(response.status, 200);
+  const saved = (
+    await query(
+      'SELECT resulting_expiry_date::text AS expiry,payment_date::text AS paid,amount,plan_name_snapshot FROM payments WHERE payment_id=$1',
+      [response.data.paymentId],
+    )
+  )[0];
+  assert.equal(saved.expiry, preview.expiryAfter);
+  assert.equal(saved.paid, preview.paymentDate);
+  assert.equal(Number(saved.amount), preview.price);
+  assert.equal(saved.plan_name_snapshot, preview.planName);
+  try {
+    await query('UPDATE plans SET is_available=FALSE WHERE plan_id=$1', [
+      ids.plan,
+    ]);
+    assert.equal(
+      (
+        await call('/api/payments/preview?planId=' + ids.plan, {
+          session: staff,
+        })
+      ).status,
+      409,
+    );
+    const retry = await action('renew', payload, staff);
+    assert.equal(retry.status, 200);
+    assert.equal(retry.data.paymentId, response.data.paymentId);
+  } finally {
+    await query('UPDATE plans SET is_available=TRUE WHERE plan_id=$1', [
+      ids.plan,
+    ]);
+  }
+  const registration = (
+    await call('/api/payments/preview?planId=' + ids.plan, { session: staff })
+  ).data;
+  const result = await action(
+    'register',
+    {
+      first: 'Preview',
+      sur: 'Member',
+      idType: 'Passport',
+      idNum: 'SERVER-PREVIEW-MEMBER',
+      password: 'PreviewPass123!',
+      photo,
+      plan: ids.plan,
+      receipt: 'SERVER-PREVIEW-REGISTER',
+      expected: registration,
+    },
+    staff,
+  );
+  assert.equal(result.status, 200);
+  assert.equal(
+    (
+      await query(
+        'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE payment_id=$1',
+        [result.data.paymentId],
+      )
+    )[0].expiry,
+    registration.expiryAfter,
+  );
+  const expired = (
+    await call(
+      '/api/payments/preview?planId=' + ids.plan + '&memberId=' + ids.old,
+      { session: staff },
+    )
+  ).data;
+  assert.ok(expired.expiryBefore < expired.paymentDate);
+  const renewed = await action(
+    'renew',
+    {
+      id: ids.old,
+      plan: ids.plan,
+      receipt: 'SERVER-PREVIEW-EXPIRED',
+      expected: expired,
+    },
+    staff,
+  );
+  assert.equal(renewed.status, 200);
+  assert.equal(
+    (
+      await query(
+        'SELECT resulting_expiry_date::text AS expiry FROM payments WHERE payment_id=$1',
+        [renewed.data.paymentId],
+      )
+    )[0].expiry,
+    expired.expiryAfter,
   );
 });
