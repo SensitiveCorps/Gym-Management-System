@@ -349,11 +349,14 @@ export async function createApp(pool, options = {}) {
     res.json(result);
   });
   const bridge = await readFile(
-    new URL('../../UI/dist/server-bridge.js', import.meta.url),
+    new URL('../../frontend/public/server-bridge.js', import.meta.url),
     'utf8',
   );
   const template = (
-    await readFile(new URL('../../UI/dist/index.html', import.meta.url), 'utf8')
+    await readFile(
+      new URL('../../frontend/public/index.html', import.meta.url),
+      'utf8',
+    )
   ).replace(
     '/* ---------- events ---------- */',
     bridge + '\n/* ---------- events ---------- */',

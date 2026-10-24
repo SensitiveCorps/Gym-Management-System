@@ -1,6 +1,6 @@
 # Selected UI: requirements fixes
 
-Baseline: the team's `Gym Management System_1.html`, [SRS v1.1](../Docs/SRS.md), [Project Plan v3.0](../Docs/PROJECT_PLAN.md) and existing PostgreSQL model. The chosen design is retained. The SRS decisions marked PENDING remain proposed.
+Baseline: the team's `Gym Management System_1.html`, [SRS v1.1](SRS.md), [Project Plan v3.0](PROJECT_PLAN.md) and existing PostgreSQL model. The chosen design is retained. The SRS decisions marked PENDING remain proposed.
 
 | Step | Result | Verification/status |
 | --- | --- | --- |
@@ -11,7 +11,7 @@ Baseline: the team's `Gym Management System_1.html`, [SRS v1.1](../Docs/SRS.md),
 | 5 — Member editing/passwords | Authorized name/ID/photo editing with duplicate protection. Member-chosen registration password; temporary resets revoke sessions and force a different password. | UI and API checks pass; physical ID verification is a staff task. |
 | 6 — Notices/hours | Member upcoming notices; seven-day gym/area schedules; scoped date overrides; gym closure precedence; immutable author metadata and append-only audits. | UI and API checks pass. Actual hours still need client confirmation. |
 | 7 — Errors/accessibility | Failed demo saves roll back; API errors surfaced; action guards; modal focus cycle/Escape/return; narrow-layout rules; booking wording removed. | Logic tests pass. Rendered keyboard/phone/browser checks remain unverified. |
-| 8 — Connected backend | Express/PostgreSQL API, Argon2id hashes, HttpOnly sessions, CSRF/origin checks, idle expiration, role/ownership checks, protected decoded photos, atomic/idempotent transactions and histories. Selected design connected through an API adapter. | 35 automated HTTP/SQL integration checks pass using PGlite, plus 34 UI checks. Native PostgreSQL and production deployment still require verification. The proposed React port is not performed. |
+| 8 — Connected backend | Express/PostgreSQL API, Argon2id hashes, HttpOnly sessions, CSRF/origin checks, idle expiration, role/ownership checks, protected decoded photos, atomic/idempotent transactions and histories. Selected design connected through an API adapter. | 40 automated HTTP/SQL integration checks pass using PGlite, plus 34 UI checks. Native PostgreSQL and production deployment still require verification. The selected frontend uses HTML/CSS/JavaScript. |
 | 9 — Acceptance/operations | Optional AUTO checkout; backup and guarded restore tooling; documented API and acceptance procedures. | Automation code implemented. Native PostgreSQL, actual backup/restore, Chrome/Firefox/Edge, representative phone/network/load, trained-staff usability, production HTTPS/availability and client-policy sign-off remain open. |
 
 ## Data compatibility
@@ -20,9 +20,9 @@ Demo data retains `gms-demo-v3` and existing expiry snapshots; no reset or retro
 
 ## Run and verify
 
-- [Standalone demo and UI checks](README.md)
-- [Connected application setup](../Server/README.md)
-- [API contract](../Server/API.md)
-- [Acceptance evidence and outstanding checks](../Server/ACCEPTANCE.md)
+- [Standalone demo and UI checks](../frontend/README.md)
+- [Connected application setup](../backend/README.md)
+- [API contract](API.md)
+- [Acceptance evidence and outstanding checks](ACCEPTANCE.md)
 
 All checks use synthetic data. Passing code tests does not approve the gym's expiry, operating-hours, minor-ID, lock/idle, closing-time or pilot-hosting policies.

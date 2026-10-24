@@ -1,5 +1,7 @@
 # Gym Management System (GMS) — Revised Project Plan
 
+> **Implementation note:** The running application uses the team's selected HTML/CSS/JavaScript interface with Express and PostgreSQL. React references below describe the original proposed stack. See the [project guide](../README.md) and [implementation checklist](IMPLEMENTATION.md) for the current code and evidence. This document's pending approval status is unchanged.
+
 **University of Eswatini · Practices in Software Engineering II (CSC491)**  
 **Document version:** 3.0 — *proposed revision; pending team/client approval*  
 **Prepared:** 18 October 2026  
@@ -308,8 +310,8 @@ Dependency notes: Gym-entry validity relies on registration and expiry rules; pu
 | --- | --- |
 | `README.md` | Overview, architecture, requirements status and developer setup instructions once verified. |
 | `docs/PROJECT_PLAN.md` | **This** revised project plan. |
-| `docs/Gym_Management_System_SRS.docx` | Existing SRS V1.0, updated/approved successor when available. |
-| `docs/Gym_Management_System_Diagrams_Revised.docx` | Proposed reconciled ER/UML models pending approval. |
+| [Original SRS](source-documents/Gym_Management_System_SRS.docx) | Existing SRS V1.0, updated/approved successor when available. |
+| [Revised diagrams](source-documents/Gym_Management_System_Diagrams_Revised.docx) | Proposed reconciled ER/UML models pending approval. |
 | `docs/decisions.md` | Meeting decisions and client policy approvals (to create). |
 | `docs/test-plan.md` | Acceptance cases, observed outcomes and defect references (to create). |
 | `frontend/`, `backend/`, `database/`, `tests/` | Suggested source/test folders **only when actually created**. |

@@ -1,0 +1,16 @@
+{
+  "name": "gym-management-system",
+  "private": true,
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "setup": "npm --prefix backend ci",
+    "start": "npm --prefix backend start",
+    "migrate": "npm --prefix backend run migrate",
+    "create-manager": "npm --prefix backend run create-manager --",
+    "test": "npm run test:ui && npm run test:api",
+    "test:ui": "node frontend/tests/check-workflows.mjs",
+    "test:api": "npm --prefix backend test"
+  }
+}
