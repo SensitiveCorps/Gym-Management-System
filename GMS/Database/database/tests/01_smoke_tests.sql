@@ -29,6 +29,13 @@ BEGIN
     VALUES('Test','Member','STUDENT_ID','DB-TEST-0001','protected/dummy/test.jpg',
            'TEST_HASH_VALUE_NOT_A_REAL_PASSWORD')
     RETURNING member_id INTO v_member;
+    -- The connected API requires stored photo bytes; keep this test compatible
+    -- with both the original 01/02 schema and the additive 04/05 migrations.
+    IF EXISTS (SELECT 1 FROM information_schema.columns
+               WHERE table_name='members' AND column_name='photo_bytes') THEN
+        EXECUTE 'UPDATE members SET photo_bytes=decode($1, ''base64'') WHERE member_id=$2'
+        USING 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVQIHWP4z8DwHwAFgAI/ScLttAAAAABJRU5ErkJggg==', v_member;
+    END IF;
     INSERT INTO plans(plan_name,price,duration_days)
     VALUES('Test 30 Day Plan', 99.00, 30) RETURNING plan_id INTO v_plan;
 

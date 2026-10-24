@@ -302,6 +302,7 @@ button.tile:hover{border-color:var(--accent)}
 .svcthumb{width:88px;aspect-ratio:3/2;border-radius:6px;overflow:hidden;flex:none;background:var(--surface2)}
 .svcthumb svg,.svcthumb img{width:100%;height:100%;object-fit:cover;display:block}
 @media (prefers-reduced-motion:reduce){*{transition:none!important;scroll-behavior:auto!important}}
+@media(max-width:480px){.main,.card,.shell,.mb{min-width:0}.cols{grid-template-columns:1fr}.who{flex-wrap:wrap}.tblwrap{max-width:100%;overflow-x:auto}.tblwrap input{max-width:100%}.pg-head p{overflow-wrap:anywhere}.actions{flex-wrap:wrap}}
 </style>
 
 <div class="bgfix" aria-hidden="true"></div>
@@ -316,8 +317,12 @@ const ymd=d=>`${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
 const pd=s=>{const [y,m,d]=s.slice(0,10).split('-').map(Number);return new Date(y,m-1,d)};
 const addDays=(s,n)=>{const d=pd(s);d.setDate(d.getDate()+n);return ymd(d)};
 const diffDays=(a,b)=>Math.round((pd(a)-pd(b))/864e5);
-const TODAY=()=>ymd(new Date());
-const nowStr=()=>{const d=new Date();return `${ymd(d)}T${pad(d.getHours())}:${pad(d.getMinutes())}`};
+const API_MODE=window.GMS_API_MODE===true;
+const GYM_TZ='Africa/Mbabane';
+const clockParts=(date=new Date())=>Object.fromEntries(new Intl.DateTimeFormat('en-CA',{timeZone:GYM_TZ,year:'numeric',month:'2-digit',day:'2-digit',hour:'2-digit',minute:'2-digit',hourCycle:'h23'}).formatToParts(date).map(p=>[p.type,p.value]));
+const TODAY=()=>{const p=clockParts();return `${p.year}-${p.month}-${p.day}`};
+const nowStr=()=>{const p=clockParts();return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}`};
+const gymMinutes=()=>{const p=clockParts();return Number(p.hour)*60+Number(p.minute)};
 const dow=s=>(pd(s).getDay()+6)%7; /* Mon=0 .. Sun=6 */
 const DAYN=['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYF=['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
@@ -345,7 +350,7 @@ const ic=(n,c='ic')=>`<svg class="${c}" viewBox="0 0 24 24" aria-hidden="true">$
 /* ---------- state + seed ---------- */
 const KEY='gms-demo-v3';
 function seed(){
-  const T=TODAY(),R=rng(20261020),n=new Date(),nowM=n.getHours()*60+n.getMinutes();
+  const T=TODAY(),R=rng(20261020),n=new Date(),nowM=gymMinutes();
   const plans=[{id:'p1',name:'Monthly',price:250,days:30,on:true},{id:'p2',name:'Student monthly',price:180,days:30,on:true},{id:'p3',name:'Quarterly',price:650,days:90,on:true},{id:'p4',name:'Weekly pass',price:80,days:7,on:true}];
   const staff=[
     {u:'manager',name:'Gym Manager',role:'manager',pw:'manager123',on:true},
@@ -369,7 +374,7 @@ function seed(){
     {id:'s5',name:'Yoga and Stretch',tag:'Mobility, breath and recovery',desc:'A calm class that builds flexibility and balance. Mats are provided.',art:'yoga',photo:null,on:true,
       instructors:[{name:'Phindile Matsebula',role:'Yoga instructor'}],
       slots:[{days:[1,3],start:'06:30',end:'07:30'},{days:[5],start:'10:30',end:'11:30'}]},
-    {id:'s6',name:'Spin Studio',tag:'Indoor cycling, 45 minute rides',desc:'Twelve bikes, a coach on the mic and a playlist that keeps you moving. Book a bike at the front desk.',art:'spin',photo:null,on:true,
+    {id:'s6',name:'Spin Studio',tag:'Indoor cycling, 45 minute rides',desc:'Twelve bikes, a coach on the mic and a playlist that keeps you moving. Ask the front desk about available bikes.',art:'spin',photo:null,on:true,
       instructors:[{name:'Lungile Gamedze',role:'Spin coach'}],
       slots:[{days:[0,2],start:'18:30',end:'19:15'}]}];
   const P=[
@@ -415,20 +420,35 @@ function seed(){
     nextId:100};
 }
 let S;
-try{S=JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
+try{S=API_MODE?null:JSON.parse(localStorage.getItem(KEY)||'null')}catch(e){S=null}
 if(!S||S.v!==3)S=seed();
-function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+if(S.hours.length===6)S.hours.push({closed:true,open:'',close:''});
+S.areaHours=S.areaHours||{};S.audit=S.audit||[];
+let committedState=JSON.stringify(S);
+function save(){if(API_MODE)return;try{const text=JSON.stringify(S);localStorage.setItem(KEY,text);committedState=text}catch(e){S=JSON.parse(committedState);throw new Error('Changes were not saved. Browser storage is unavailable or full. Try again.')}}
+function audit(entity,id,action,before,after){const clean=x=>x==null?null:JSON.parse(JSON.stringify(x,(k,v)=>['pw','password','password_hash','photo','idNum'].includes(k)?undefined:v));S.audit.push({id:uid('a'),entity,target:id,action,by:ui.session.id,at:nowStr(),before:clean(before),after:clean(after)})}
+function validPhoto(photo){return typeof photo==='string'&&(/^data:image\/(jpeg|png);base64,[A-Za-z0-9+/=]+$/.test(photo)&&photo.length<3000000||API_MODE&&/^\/api\/members\/\d+\/photo$/.test(photo))}
+function availablePlan(id){const p=S.plans.find(p=>p.id===id&&p.on);if(!p||!Number.isInteger(p.days)||p.days<1||!Number.isFinite(p.price)||p.price<0)throw new Error('Choose an available plan with a valid price and duration.');return p}
+function latestPayment(id){return S.payments.filter(p=>p.memberId===id&&(!p.status||p.status==='CONFIRMED')).at(-1)}
+function paymentFor(m,p,receipt){return {id:uid('pay'),memberId:m.id,planId:p.id,plan:p.name,amount:p.price,days:p.days,date:TODAY(),recordedAt:nowStr(),expiry:calcExpiry(memExpiry(m.id),TODAY(),p.days).exp,receipt,staff:ui.session.id,method:'CASH',status:'CONFIRMED'}}
 const uid=p=>p+(S.nextId++);
 
 /* ---------- domain logic ---------- */
-function hoursFor(date){
-  const w=dow(date);if(w===6)return{closed:true,sunday:true,reason:'Closed on Sundays'};
-  const ov=S.overrides.find(o=>o.date===date);
-  if(ov)return ov.closed?{closed:true,reason:ov.reason||'Closed'}:{open:ov.open,close:ov.close,override:true,reason:ov.reason};
-  return{open:S.hours[w].open,close:S.hours[w].close};
+function hoursFor(date,scope=null){
+  const resolve=svc=>{const ov=S.overrides.find(o=>!o.cancelled&&o.date===date&&(o.svc||null)===svc);
+    if(ov)return ov.closed?{closed:true,reason:ov.reason||'Closed',override:true}:{open:ov.open,close:ov.close,override:true,reason:ov.reason};
+    const h=svc?(S.areaHours[svc]||[])[dow(date)]:S.hours[dow(date)];
+    if(h)return h.closed?{closed:true,reason:'Weekly closure'}:{open:h.open,close:h.close};
+    if(svc){const service=S.services.find(s=>s.id===svc),slots=(service?.slots||[]).filter(x=>x.days.includes(dow(date))).sort((a,b)=>a.start.localeCompare(b.start));return slots.length?{open:slots[0].start,close:slots.map(x=>x.end).sort().at(-1)}:{closed:true,reason:'No scheduled hours'}}
+    return {closed:true,reason:'Hours not configured'};
+  };
+  const gym=resolve(null);if(!scope||gym.closed)return gym;
+  const area=resolve(scope);if(area.closed)return area;
+  const open=area.open>gym.open?area.open:gym.open,close=area.close<gym.close?area.close:gym.close;
+  return open<close?{...area,open,close}:{closed:true,reason:'Outside gym hours'};
 }
 function gymStatus(){
-  const T=TODAY(),h=hoursFor(T),n=new Date(),m=n.getHours()*60+n.getMinutes();
+  const T=TODAY(),h=hoursFor(T),n=new Date(),m=gymMinutes();
   if(h.closed)return{open:false,label:h.sunday?'Closed today':'Closed today',sub:h.reason,h};
   if(m<mins(h.open))return{open:false,label:'Opens at '+h.open,sub:'Closes at '+h.close,h};
   if(m>=mins(h.close))return{open:false,label:'Closed for today',sub:'Opens again next open day',h};
@@ -438,20 +458,20 @@ const noticeState=(n,T=TODAY())=>n.cancelled?'cancelled':T<n.start?'upcoming':T>
 const liveNotices=()=>S.notices.filter(n=>noticeState(n)==='live');
 const upcomingNotices=()=>S.notices.filter(n=>noticeState(n)==='upcoming');
 const svcName=id=>id?(S.services.find(s=>s.id===id)||{name:'Service'}).name:'Whole gym';
-const calcExpiry=(cur,pay,days)=>cur&&cur>=pay?{base:cur,exp:addDays(cur,days),mode:'extend'}:{base:pay,exp:addDays(pay,days),mode:'fresh'};
-const memExpiry=id=>{const p=S.payments.filter(x=>x.memberId===id).sort((a,b)=>a.expiry<b.expiry?1:-1)[0];return p?p.expiry:null};
-const memLeft=m=>{const e=memExpiry(m.id);return e===null?-9999:diffDays(e,TODAY())};
-const memPlan=m=>{const p=S.payments.filter(x=>x.memberId===m.id).sort((a,b)=>a.expiry<b.expiry?1:-1)[0];return p?p.plan:'No plan'};
+const calcExpiry=(cur,pay,days)=>cur&&cur>=pay?{base:cur,exp:addDays(cur,days),mode:'extend'}:{base:pay,exp:addDays(pay,days-1),mode:'fresh'}; // Proposed inclusive convention, matching PostgreSQL; D07 still needs approval.
+const memExpiry=id=>latestPayment(id)?.expiry||null;
+const memLeft=m=>{const e=memExpiry(m.id);return e===null?-9999:diffDays(e,TODAY())+(e>=TODAY()?1:0)};
+const memPlan=m=>latestPayment(m.id)?.plan||'No plan';
 const fullName=m=>m.first+' '+m.sur;
 const isInside=id=>S.checkins.find(c=>c.m===id&&!c.out);
 const staffName=u=>(S.staff.find(x=>x.u===u)||{name:u}).name;
-const mask=s=>s.length<=3?s:'•'.repeat(Math.min(6,s.length-3))+s.slice(-3);
+const mask=s=>s.length<=3?'•••':'•'.repeat(Math.min(6,s.length-3))+s.slice(-3);
 function fmtDays(days){const d=[...days].sort((a,b)=>a-b),out=[];let i=0;
   while(i<d.length){let j=i;while(j+1<d.length&&d[j+1]===d[j]+1)j++;
     if(j-i>=2)out.push(DAYN[d[i]]+'–'+DAYN[d[j]]);else for(let k=i;k<=j;k++)out.push(DAYN[d[k]]);i=j+1}
   return out.join(', ')}
-function nextSlot(s){const T=TODAY(),n=new Date(),nm=n.getHours()*60+n.getMinutes();
-  for(let k=0;k<8;k++){const d=addDays(T,k),w=dow(d);if(w===6||hoursFor(d).closed)continue;
+function nextSlot(s){const T=TODAY(),n=new Date(),nm=gymMinutes();
+  for(let k=0;k<8;k++){const d=addDays(T,k),w=dow(d);if(hoursFor(d,s.id).closed)continue;
     const sl=s.slots.filter(x=>x.days.includes(w)&&!(k===0&&mins(x.end)<=nm)).sort((a,b)=>a.start<b.start?-1:1)[0];
     if(sl)return{k,w,sl,label:(k===0?'Today':k===1?'Tomorrow':DAYN[w])+' '+sl.start+'–'+sl.end}}
   return null}
@@ -485,9 +505,9 @@ function avatar(name,photo,cls=''){const ini=name.split(' ').map(x=>x[0]).slice(
   return `<span class="av ${cls}" style="background:${AVC[h%AVC.length]}">${photo?`<img src="${photo}" alt="">`:esc(ini)}</span>`}
 
 /* ---------- ui state ---------- */
-const now0=new Date();
+const now0=pd(TODAY());
 let ui={view:'public',login:'member',session:null,peek:false,tab:'',modal:null,q:'',mq:'',ciMsg:null,cal:{y:now0.getFullYear(),m:now0.getMonth()},
-  draft:null,regPhoto:null,regDone:null,noticeEdit:null,staffEdit:null,staffPw:null,loginErr:'',rep:'active',repDate:TODAY(),finR:'month',suspendAsk:null,newIds:[]};
+  draft:null,regPhoto:null,regDone:null,noticeEdit:null,staffEdit:null,staffPw:null,loginErr:'',rep:'active',repDate:TODAY(),finR:'month',suspendAsk:null,newIds:[],hoursScope:null,editPhoto:null};
 const me=()=>{const s=ui.session;if(!s)return null;return s.role==='member'?S.members.find(m=>m.id===s.id):S.staff.find(x=>x.u===s.id)};
 function toast(t){const r=$('#toast-root');r.innerHTML=`<div class="toast">${esc(t)}</div>`;clearTimeout(toast.t);toast.t=setTimeout(()=>r.innerHTML='',2800)}
 function setMsg(f,t,type='bad'){const el=f.querySelector('.msg');if(el){el.className='msg '+type;el.textContent=t}}
@@ -506,7 +526,7 @@ function siteHeader(){
     `<span class="lbl">Log in</span>`+['member','staff','manager'].map(r=>`<button class="lg ${ui.view==='login'&&ui.login===r?'on':''}" data-act="login" data-role="${r}">${r[0].toUpperCase()+r.slice(1)}</button>`).join('');
   return `<header class="site"><div class="wrap bar">
    <button class="brand" data-act="home" aria-label="Gym home page"><span class="mark"><svg viewBox="0 0 24 24"><path d="M3 9v6M6 6v12M18 6v12M21 9v6M6 12h12"/></svg></span><span>UNESWA <b>GYM</b></span></button>
-   <div class="bellwrap"><button class="bell" data-act="bell" aria-label="Notifications, ${live.length} today" aria-expanded="false">${ic('bell')}${live.length?`<span class="badge">${live.length}</span>`:''}</button>
+   <div class="bellwrap"><button class="bell" data-act="bell" aria-label="Notifications, ${live.length} current and ${up.length} upcoming" aria-expanded="false">${ic('bell')}${live.length+up.length?`<span class="badge">${live.length+up.length}</span>`:''}</button>
     <div class="bellpanel" id="bellpanel" hidden><h3>Today at the gym</h3>
      ${live.length?`<ul class="nlist">${live.map(n=>noteItem(n)).join('')}</ul>`:'<p class="muted">No notices today. Everything is running as normal.</p>'}
      ${up.length?`<h3 style="margin-top:14px">Coming up</h3><ul class="nlist">${up.map(n=>noteItem(n,1)).join('')}</ul>`:''}</div></div>
@@ -525,7 +545,7 @@ function viewPublic(){
   <main class="wrap">
    <section class="hero"><div class="hero-grid">
     <div class="hero-copy"><span class="eyebrow">University of Eswatini</span>
-     <h1>Your campus gym. Open Monday to Saturday.</h1>
+     <h1>Your campus gym. Plan your next visit.</h1>
      <p class="lead">See what is on today and who is coaching before you travel. Closures are posted here by the manager the moment they are known.</p>
      <div class="hero-actions"><button class="btn primary" data-act="scroll" data-to="services">Explore services ${ic('arrow')}</button><button class="btn" data-act="scroll" data-to="plans">Membership plans</button></div></div>
     <div class="board" aria-label="Today's opening hours">
@@ -542,8 +562,8 @@ function viewPublic(){
     <div class="plans">${S.plans.filter(p=>p.on).map(p=>`<div class="plan"><span class="eyebrow">${esc(p.name)}</span><div class="amt">${E(p.price)}<small>/ ${p.days} days</small></div><p class="muted small">${E(Math.round(p.price/p.days*10)/10)} per day</p></div>`).join('')}</div></section>
 
    <section class="blk" id="hours"><div class="sec-head"><div><span class="eyebrow">Plan your visit</span><h2>Opening hours</h2></div></div>
-    <div class="hours-grid"><div class="card tblwrap"><table><thead><tr><th>Day</th><th>Opens</th><th>Closes</th></tr></thead><tbody>${DAYN.map((d,i)=>`<tr class="${i===w?'today':''}"><td>${DAYF[i]}${i===w?' (today)':''}</td><td class="mono">${i===6?'Closed':S.hours[i].open}</td><td class="mono">${i===6?'Closed':S.hours[i].close}</td></tr>`).join('')}</tbody></table></div>
-     <div class="card stack"><h3>Changes to normal hours</h3>${S.overrides.filter(o=>o.date>=T).sort((a,b)=>a.date<b.date?-1:1).map(o=>`<div class="listrow"><div><b>${fmtD(o.date)}</b><div class="small muted">${esc(o.reason||'')}</div></div><span class="pill ${o.closed?'bad':'warn'}">${o.closed?'Closed':o.open+' – '+o.close}</span></div>`).join('')||'<p class="muted">No changes planned.</p>'}</div></div></section>
+    <div class="hours-grid"><div class="card tblwrap"><table><thead><tr><th>Day</th><th>Opens</th><th>Closes</th></tr></thead><tbody>${DAYN.map((d,i)=>`<tr class="${i===w?'today':''}"><td>${DAYF[i]}${i===w?' (today)':''}</td><td class="mono">${S.hours[i]?.closed?'Closed':S.hours[i]?.open||'Not set'}</td><td class="mono">${S.hours[i]?.closed?'Closed':S.hours[i]?.close||'Not set'}</td></tr>`).join('')}</tbody></table></div>
+     <div class="card stack"><h3>Changes to normal hours</h3>${S.overrides.filter(o=>!o.cancelled&&o.date>=T).sort((a,b)=>a.date<b.date?-1:1).map(o=>`<div class="listrow"><div><b>${fmtD(o.date)} · ${esc(svcName(o.svc))}</b><div class="small muted">${esc(o.reason||'')}</div></div><span class="pill ${o.closed?'bad':'warn'}">${o.closed?'Closed':o.open+' – '+o.close}</span></div>`).join('')||'<p class="muted">No changes planned.</p>'}</div></div></section>
   </main>${footer()}`}
 function svcCard(s){const nx=nextSlot(s),cl=svcClosedToday(s);
   return `<button class="svc" data-act="svc" data-id="${s.id}" aria-label="${esc(s.name)}, details"><div class="pic">${picOf(s)}${cl.length?'<span class="pill bad tag">Notice today</span>':''}</div>
@@ -555,7 +575,7 @@ function modalService(s){const cl=svcClosedToday(s);
    <p>${esc(s.desc)}</p>
    <div class="facts"><div class="fact"><span class="eyebrow">Access</span><b>Included with membership</b></div><div class="fact"><span class="eyebrow">Next session</span><b>${(nextSlot(s)||{label:'None set'}).label}</b></div></div>
    <div><h3 style="margin-bottom:8px">Instructors</h3><div class="stack">${s.instructors.map(i=>`<div class="person">${avatar(i.name)}<div><b>${esc(i.name)}</b><div class="small muted">${esc(i.role)}</div></div></div>`).join('')||'<p class="muted">Staffed by the floor team.</p>'}</div></div>
-   <div><h3 style="margin-bottom:8px">Times</h3><div class="tblwrap"><table><tbody>${s.slots.map(x=>`<tr><td>${fmtDays(x.days)}</td><td class="num">${x.start} – ${x.end}</td></tr>`).join('')||'<tr><td class="muted">No times set</td></tr>'}</tbody></table></div><p class="small muted" style="margin-top:8px">The gym is closed on Sundays.</p></div>
+   <div><h3 style="margin-bottom:8px">Times</h3><div class="tblwrap"><table><tbody>${s.slots.map(x=>`<tr><td>${fmtDays(x.days)}</td><td class="num">${x.start} – ${x.end}</td></tr>`).join('')||'<tr><td class="muted">No times set</td></tr>'}</tbody></table></div><p class="small muted" style="margin-top:8px">Today: ${hoursFor(TODAY(),s.id).closed?'Closed':hoursFor(TODAY(),s.id).open+' – '+hoursFor(TODAY(),s.id).close}. Check the public hours for date-specific changes.</p></div>
   </div></div>`}
 
 /* ---------- login ---------- */
@@ -569,14 +589,14 @@ function viewLogin(){const r=ui.login,mem=r==='member';
     <div class="fld"><label for="lg-p">Password</label><input id="lg-p" type="password" autocomplete="current-password"></div>
     <div class="msg ${ui.loginErr?'bad':''}" role="alert">${esc(ui.loginErr)}</div>
     <button class="btn primary" type="submit">Log in</button></form>
-   <div class="demo"><b>Demo accounts</b><br>${mem?'<code>Student ID</code> · <code>202301234</code> · <code>member123</code>':r==='staff'?'<code>nelisiwe</code> or <code>vusi</code> · <code>staff123</code>':'<code>manager</code> · <code>manager123</code>'}<br>${r==='staff'||r==='manager'?'Your login time is recorded as proof of presence.':'Members only ever see their own record.'}</div>
-   <button class="btn ghost sm" data-act="resetdemo" type="button">Reset demo data</button></div></main>`}
+${API_MODE?'':`   <div class="demo"><b>Demo accounts</b><br>${mem?'<code>Student ID</code> · <code>202301234</code> · <code>member123</code>':r==='staff'?'<code>nelisiwe</code> or <code>vusi</code> · <code>staff123</code>':'<code>manager</code> · <code>manager123</code>'}<br>${r==='staff'||r==='manager'?'Your login time is recorded as proof of presence.':'Members only ever see their own record.'}</div>`}
+   ${API_MODE?'':'<button class="btn ghost sm" data-act="resetdemo" type="button">Reset demo data</button>'}</div></main>`}
 function doLogin(f){
   const p=$('#lg-p').value,r=ui.login,T=nowStr();
   if(r==='member'){const t=$('#lg-idt').value,id=$('#lg-id').value.trim().toLowerCase();
     const m=S.members.find(x=>x.idType===t&&x.idNum.toLowerCase()===id);
     if(m&&m.lock>Date.now())return fail('This account is locked for a few minutes after too many wrong passwords. Try again later or ask staff.');
-    if(!m||m.pw!==p){if(m){m.fails++;if(m.fails>=5){m.lock=Date.now()+5*6e4;m.fails=0;save();return fail('Too many wrong passwords. The account is locked for 5 minutes.')}save()}return fail('ID type, ID number or password is not correct.')}
+    if(!m||m.pw!==p){if(m){m.fails++;if(m.fails>=5){m.lock=Date.now()+(S.policy?.lockMinutes||15)*6e4;m.fails=0;save();return fail('Too many wrong passwords. The account is locked for '+(S.policy?.lockMinutes||15)+' minutes.')}save()}return fail('ID type, ID number or password is not correct.')}
     m.fails=0;save();ui.session={role:'member',id:m.id};ui.loginErr='';ui.peek=false;const now=new Date();ui.cal={y:now.getFullYear(),m:now.getMonth()};render();window.scrollTo(0,0);return}
   const u=$('#lg-u').value.trim().toLowerCase(),a=S.staff.find(x=>x.u===u);
   if(!a||a.pw!==p)return fail('Username or password is not correct.');
@@ -641,7 +661,7 @@ function svcEditor(){const d=ui.draft,isNew=!S.services.some(s=>s.id===d.id);
    <div class="fld"><span class="lab">Picture</span><div class="photoup"><div class="svcthumb" style="width:150px">${picOf(d)}</div><div class="actions"><label class="btn sm" for="sv-photo">Upload photo</label><input id="sv-photo" type="file" accept="image/*" data-change="svcphoto" hidden>${d.photo?'<button class="btn sm ghost" type="button" data-act="svcphotoclear">Use default picture</button>':''}</div></div></div>
    <div class="fld"><span class="lab">Instructors</span><div class="stack">${d.instructors.map((x,i)=>`<div class="cols" style="grid-template-columns:1fr 1fr auto;align-items:end"><div class="fld"><label for="in-n${i}">Name</label><input id="in-n${i}" data-dr="instructors.${i}.name" value="${esc(x.name)}"></div><div class="fld"><label for="in-r${i}">Role</label><input id="in-r${i}" data-dr="instructors.${i}.role" value="${esc(x.role)}"></div><button class="btn sm danger" type="button" data-act="insdel" data-i="${i}">Remove</button></div>`).join('')}
     <div><button class="btn sm" type="button" data-act="insadd">${ic('plus')} Add instructor</button></div></div></div>
-   <div class="fld"><span class="lab">Times (Sundays are always closed)</span><div class="stack">${d.slots.map((x,i)=>`<div class="slot"><div class="daychips" role="group" aria-label="Days">${DAYN.map((n,k)=>`<button type="button" class="${x.days.includes(k)?'on':''}" ${k===6?'disabled':''} data-act="slotday" data-i="${i}" data-d="${k}" aria-pressed="${x.days.includes(k)}">${n}</button>`).join('')}</div>
+   <div class="fld"><span class="lab">Regular session times</span><div class="stack">${d.slots.map((x,i)=>`<div class="slot"><div class="daychips" role="group" aria-label="Days">${DAYN.map((n,k)=>`<button type="button" class="${x.days.includes(k)?'on':''}" data-act="slotday" data-i="${i}" data-d="${k}" aria-pressed="${x.days.includes(k)}">${n}</button>`).join('')}</div>
      <input id="sl-s${i}" type="time" aria-label="Start time" data-dr="slots.${i}.start" value="${x.start}"><input id="sl-e${i}" type="time" aria-label="End time" data-dr="slots.${i}.end" value="${x.end}"><button class="btn sm danger" type="button" data-act="sldel" data-i="${i}">Remove</button></div>`).join('')}
     <div><button class="btn sm" type="button" data-act="sladd">${ic('plus')} Add time slot</button></div></div></div>
    <label class="chk"><input id="sv-on" type="checkbox" data-dr="on" ${d.on?'checked':''}> Show on the public page</label>
@@ -650,46 +670,47 @@ function svcEditor(){const d=ui.draft,isNew=!S.services.some(s=>s.id===d.id);
 function setPath(o,path,v){const k=path.split('.');let t=o;for(let i=0;i<k.length-1;i++)t=t[k[i]];t[k[k.length-1]]=v}
 
 /* ---------- manager: hours + notices + contact ---------- */
-function pgHours(){const T=TODAY(),ne=S.notices.find(n=>n.id===ui.noticeEdit)||{msg:'',svc:null,start:T,end:T};
+function pgHours(){const T=TODAY(),scope=ui.hoursScope||null,weekly=scope?(S.areaHours[scope]||DAYN.map((_,i)=>{const h=hoursFor(addDays(T,i-dow(T)),scope);return h.closed?{closed:true,open:'',close:''}:h})):S.hours,ne=S.notices.find(n=>n.id===ui.noticeEdit)||{msg:'',svc:null,start:T,end:T};
   return `<div class="pg-head"><h1>Hours and notices</h1><p>Opening times, one-off changes and today's broadcast notices all show on the public page.</p></div>
-  <form class="form card" data-form="hours" novalidate><h3>Weekly opening hours</h3>
-   <div class="tblwrap"><table><thead><tr><th>Day</th><th>Opens</th><th>Closes</th></tr></thead><tbody>${[0,1,2,3,4,5].map(i=>`<tr><td>${DAYF[i]}</td><td><input id="hr-o${i}" type="time" value="${S.hours[i].open}" aria-label="${DAYF[i]} opens" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .5em;background:var(--surface)"></td><td><input id="hr-c${i}" type="time" value="${S.hours[i].close}" aria-label="${DAYF[i]} closes" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .5em;background:var(--surface)"></td></tr>`).join('')}
-   <tr><td>Sunday</td><td colspan="2"><span class="pill bad">Always closed</span></td></tr></tbody></table></div>
+  <div class="card fld"><label for="hr-scope">Weekly schedule for</label><select id="hr-scope" data-change="hoursscope"><option value="">Whole gym</option>${S.services.map(service=>`<option value="${service.id}" ${scope===service.id?'selected':''}>${esc(service.name)}</option>`).join('')}</select></div>
+  <form class="form card" data-form="hours" data-scope="${scope||''}" novalidate><h3>Weekly opening hours · ${esc(svcName(scope))}</h3>
+   <div class="tblwrap"><table><thead><tr><th>Day</th><th>Closed</th><th>Opens</th><th>Closes</th></tr></thead><tbody>${DAYN.map((_,i)=>{const h=weekly[i]||{closed:true};return `<tr><td>${DAYF[i]}</td><td><input id="hr-x${i}" type="checkbox" ${h.closed?'checked':''} aria-label="${DAYF[i]} closed"></td><td><input id="hr-o${i}" type="time" value="${h.open||'06:00'}" aria-label="${DAYF[i]} opens"></td><td><input id="hr-c${i}" type="time" value="${h.close||'21:00'}" aria-label="${DAYF[i]} closes"></td></tr>`}).join('')}</tbody></table></div>
    <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Save opening hours</button></div></form>
 
   <form class="form card" data-form="override" novalidate><h3>Change one day only</h3><p class="muted small">Use this for a holiday, an event or a late start. It replaces the weekly hours for that date only.</p>
-   <div class="cols"><div class="fld"><label for="ov-d">Date</label><input id="ov-d" type="date" min="${T}" value="${addDays(T,1)}"></div><div class="fld"><label for="ov-r">Reason (shown to the public)</label><input id="ov-r" placeholder="e.g. Public holiday"></div></div>
+   <div class="fld"><label for="ov-scope">Affects</label><select id="ov-scope"><option value="">Whole gym</option>${S.services.map(s=>`<option value="${s.id}">${esc(s.name)}</option>`).join('')}</select></div><div class="cols"><div class="fld"><label for="ov-d">Date</label><input id="ov-d" type="date" min="${T}" value="${addDays(T,1)}"></div><div class="fld"><label for="ov-r">Reason (shown to the public)</label><input id="ov-r" placeholder="e.g. Public holiday"></div></div>
    <label class="chk"><input id="ov-closed" type="checkbox" checked> Closed all day</label>
    <div class="cols"><div class="fld"><label for="ov-o">Opens</label><input id="ov-o" type="time" value="10:00"></div><div class="fld"><label for="ov-c">Closes</label><input id="ov-c" type="time" value="16:00"></div></div>
    <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Add change</button></div>
-   <div class="stack">${S.overrides.sort((a,b)=>a.date<b.date?-1:1).map(o=>`<div class="listrow"><div><b>${fmtD(o.date)} ${pd(o.date).getFullYear()}</b><div class="small muted">${esc(o.reason||'')}</div></div><div class="actions"><span class="pill ${o.closed?'bad':'warn'}">${o.closed?'Closed':o.open+' – '+o.close}</span><button class="btn sm danger" type="button" data-act="ovdel" data-id="${o.id}">Remove</button></div></div>`).join('')}</div></form>
+   <div class="stack">${S.overrides.filter(o=>!o.cancelled).slice().sort((a,b)=>a.date<b.date?-1:1).map(o=>`<div class="listrow"><div><b>${fmtD(o.date)} ${pd(o.date).getFullYear()} · ${esc(svcName(o.svc))}</b><div class="small muted">${esc(o.reason||'')}</div></div><div class="actions"><span class="pill ${o.closed?'bad':'warn'}">${o.closed?'Closed':o.open+' – '+o.close}</span><button class="btn sm danger" type="button" data-act="ovdel" data-id="${o.id}">Remove</button></div></div>`).join('')}</div></form>
 
-  <form class="form card" data-form="notice" novalidate><h3>${ui.noticeEdit?'Edit notice':'Post a notice'}</h3><p class="muted small">Notices appear in the bell on the public page and on member pages from the start date until the end date.</p>
+  <form class="form card" data-form="notice" novalidate><h3>${ui.noticeEdit?'Edit notice':'Post a notice'}</h3><p class="muted small">Notices appear in the bell on the public page and on member pages as soon as they are published, including upcoming notices. They remain visible through the end date.</p>
    <div class="fld"><label for="nt-m">Message</label><textarea id="nt-m">${esc(ne.msg)}</textarea></div>
    <div class="cols"><div class="fld"><label for="nt-s">Affects</label><select id="nt-s"><option value="">Whole gym</option>${S.services.map(s=>`<option value="${s.id}" ${ne.svc===s.id?'selected':''}>${esc(s.name)}</option>`).join('')}</select></div>
     <div class="fld"><label for="nt-a">Start date</label><input id="nt-a" type="date" value="${ne.start}"></div><div class="fld"><label for="nt-b">End date</label><input id="nt-b" type="date" value="${ne.end}"></div></div>
    <div class="msg" role="alert"></div><div class="actions"><button class="btn primary" type="submit">${ui.noticeEdit?'Save notice':'Post notice'}</button>${ui.noticeEdit?'<button class="btn" type="button" data-act="noticeeditcancel">Cancel edit</button>':''}</div>
    <div class="stack">${S.notices.filter(n=>noticeState(n)!=='ended'&&noticeState(n)!=='cancelled').map(n=>{const st=noticeState(n);return `<div class="listrow"><div style="min-width:0;flex:1 1 260px"><div class="actions"><span class="pill ${st==='live'?'good':'blue'}">${st==='live'?'Live':'Upcoming'}</span><span class="pill">${esc(svcName(n.svc))}</span><span class="small mono muted">${fmtD(n.start)}${n.end!==n.start?' to '+fmtD(n.end):''}</span></div><p style="margin-top:6px">${esc(n.msg)}</p><p class="small muted">Posted by ${esc(staffName(n.by))}</p></div><div class="actions"><button class="btn sm" type="button" data-act="noteedit" data-id="${n.id}">${ic('edit')} Edit</button><button class="btn sm danger" type="button" data-act="notecancel" data-id="${n.id}">Cancel notice</button></div></div>`}).join('')||'<p class="muted">No live or upcoming notices.</p>'}</div></form>
 
+  <div class="card"><h3>Change history</h3><div class="tblwrap"><table><thead><tr><th>Time</th><th>Actor</th><th>Change</th><th>Details</th></tr></thead><tbody>${[...S.audit].reverse().map(a=>`<tr><td class="mono">${esc(a.at)}</td><td>${esc(staffName(a.by))}</td><td>${esc(a.action+' '+a.entity)}</td><td><details><summary>View change</summary><pre style="max-width:360px;white-space:pre-wrap">${esc(JSON.stringify({before:a.before,after:a.after},null,2))}</pre></details></td></tr>`).join('')||'<tr><td colspan="4">No changes recorded yet.</td></tr>'}</tbody></table></div></div>
   <form class="form card" data-form="contact" novalidate><h3>Contact and location</h3><p class="muted small">Shown at the bottom of the public page. These are sample details until you replace them.</p>
    <div class="fld"><label for="ct-a">Address</label><input id="ct-a" value="${esc(S.contact.address)}"></div>
    <div class="cols"><div class="fld"><label for="ct-p">Phone</label><input id="ct-p" value="${esc(S.contact.phone)}"></div><div class="fld"><label for="ct-e">Email</label><input id="ct-e" value="${esc(S.contact.email)}"></div></div>
    <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Save contact details</button></div></form>`}
 
 /* ---------- manager: plans, staff, denied ---------- */
-function pgPlans(){return `<div class="pg-head"><h1>Plans</h1><p>Each payment adds the plan's days. Plans that have payments cannot be deleted, only taken off sale.</p></div>
+function pgPlans(){return `<div class="pg-head"><h1>Plans</h1><p>Choose daily (1 day), weekly (7 days), monthly (30 days), or a custom number of days. Each payment adds the stored duration. Plans that have payments cannot be deleted, only taken off sale.</p></div>
   <form class="card form" data-form="plans" novalidate><div class="tblwrap"><table><thead><tr><th>Name</th><th>Price (E)</th><th>Days</th><th>On sale</th></tr></thead><tbody>${S.plans.map((p,i)=>`<tr><td><input class="cellin" id="pl-n${i}" value="${esc(p.name)}" aria-label="Plan name" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:100%;min-width:150px"></td>
-   <td><input id="pl-p${i}" type="number" min="0" value="${p.price}" aria-label="Price" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:100px"></td>
-   <td><input id="pl-d${i}" type="number" min="1" value="${p.days}" aria-label="Days" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:90px"></td><td><input id="pl-o${i}" type="checkbox" ${p.on?'checked':''} aria-label="On sale" style="width:20px;height:20px;accent-color:var(--accent)"></td></tr>`).join('')}</tbody></table></div>
+   <td><input id="pl-p${i}" type="number" min="0" step="0.01" value="${p.price}" aria-label="Price" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:100px"></td>
+   <td><input id="pl-d${i}" type="number" min="1" value="${p.days}" step="1" aria-label="Days" style="min-height:40px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:90px"><div class="actions">${[[1,'Daily'],[7,'Weekly'],[30,'Monthly']].map(([n,label])=>`<button class="btn sm" type="button" data-act="planduration" data-i="${i}" data-days="${n}">${label}</button>`).join('')}</div></td><td><input id="pl-o${i}" type="checkbox" ${p.on?'checked':''} aria-label="On sale" style="width:20px;height:20px;accent-color:var(--accent)"></td></tr>`).join('')}</tbody></table></div>
    <div class="msg" role="alert"></div><div class="actions"><button class="btn primary" type="submit">Save plans</button><button class="btn" type="button" data-act="planadd">${ic('plus')} Add plan</button></div></form>`}
 function pgStaff(){const T=TODAY();
   return `<div class="pg-head"><h1>Staff accounts</h1><p>Create staff, change their details or passwords, and disable accounts. Every action is recorded under the person who did it.</p></div>
-  <form class="card form" data-form="newstaff" novalidate><h3>New staff account</h3><div class="cols"><div class="fld"><label for="ns-n">Full name</label><input id="ns-n"></div><div class="fld"><label for="ns-u">Username</label><input id="ns-u" autocapitalize="none"></div><div class="fld"><label for="ns-p">Password</label><input id="ns-p" type="text" autocomplete="off"></div></div>
+  <form class="card form" data-form="newstaff" novalidate><h3>New staff account</h3><div class="cols"><div class="fld"><label for="ns-n">Full name</label><input id="ns-n"></div><div class="fld"><label for="ns-u">Username</label><input id="ns-u" autocapitalize="none"></div><div class="fld"><label for="ns-p">Password</label><input id="ns-p" type="password" autocomplete="new-password"></div></div>
    <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Create account</button></div></form>
   <div class="card"><h3 style="margin-bottom:10px">Accounts</h3><div class="tblwrap"><table><thead><tr><th>Name</th><th>Username</th><th>Role</th><th>Today</th><th>Status</th><th></th></tr></thead><tbody>${S.staff.map(a=>{const lg=S.staffLog.find(x=>x.u===a.u&&x.in.slice(0,10)===T),ed=ui.staffEdit===a.u,pw=ui.staffPw===a.u;
    return `<tr><td>${ed&&a.role==='staff'?`<input id="se-n" value="${esc(a.name)}" aria-label="Name" style="min-height:36px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:100%;min-width:140px">`:`<div class="person">${avatar(a.name)}<b>${esc(a.name)}</b></div>`}</td>
     <td class="mono">${ed&&a.role==='staff'?`<input id="se-u" value="${esc(a.u)}" aria-label="Username" style="min-height:36px;border:1.5px solid var(--line);border-radius:6px;padding:.2em .6em;background:var(--surface);width:130px">`:esc(a.u)}</td><td>${a.role}</td><td class="mono">${lg?'In '+fmtT(lg.in):'Not in'}</td><td><span class="pill ${a.on?'good':'bad'}">${a.on?'Enabled':'Disabled'}</span></td>
-    <td><div class="cell-actions">${pw?`<input id="sp-p" type="text" placeholder="New password" autocomplete="off" aria-label="New password"><button class="btn sm primary" data-act="pwsave" data-u="${a.u}">Set</button><button class="btn sm" data-act="pwcancel">Cancel</button>`
+    <td><div class="cell-actions">${pw?`<input id="sp-p" type="password" placeholder="New password" autocomplete="off" aria-label="New password"><button class="btn sm primary" data-act="pwsave" data-u="${a.u}">Set</button><button class="btn sm" data-act="pwcancel">Cancel</button>`
      :ed&&a.role==='staff'?`<button class="btn sm primary" data-act="stsave" data-u="${a.u}">Save</button><button class="btn sm" data-act="pwcancel">Cancel</button>`
      :`${a.role==='staff'?`<button class="btn sm" data-act="stedit" data-u="${a.u}">Edit</button>`:''}<button class="btn sm" data-act="pwedit" data-u="${a.u}">Reset password</button>${a.role==='staff'?`<button class="btn sm ${a.on?'danger':''}" data-act="sttoggle" data-u="${a.u}">${a.on?'Disable':'Enable'}</button>`:''}`}</div></td></tr>`}).join('')}</tbody></table></div></div>
   <div class="card"><h3>Presence log</h3><p class="small muted" style="margin:4px 0 10px">Recorded when a staff member logs in and out. Use it to confirm who was working.</p><div class="tblwrap"><table><thead><tr><th>Staff</th><th>Date</th><th>Signed in</th><th>Signed out</th><th class="num">Hours</th></tr></thead><tbody>${[...S.staffLog].sort((a,b)=>a.in<b.in?1:-1).slice(0,40).map(x=>{const h=x.out?((pd(x.out.slice(0,10))-pd(x.in.slice(0,10)))/36e5+(mins(x.out.slice(11,16))-mins(x.in.slice(11,16)))/60):null;
@@ -706,7 +727,7 @@ function statusOf(m){const l=memLeft(m),e=memExpiry(m.id);
 function memberCard(m,desk){const st=statusOf(m),ins=isInside(m.id);
   return `<article class="mc"><span class="av sq big" style="background:${AVC[(m.first.length+m.sur.length)%AVC.length]}">${m.photo?`<img src="${m.photo}" alt="Photo of ${esc(fullName(m))}">`:esc(m.first[0]+m.sur[0])}</span>
    <div class="info"><h3>${esc(fullName(m))}</h3><div class="mono small muted">${esc(m.idType)} · ${esc(m.idNum)}</div><div class="actions"><span class="pill ${st.cls}">${st.t}</span>${ins?`<span class="pill blue">Inside since ${fmtT(ins.in)}</span>`:''}</div><div class="small muted">${esc(memPlan(m))} · ${esc(st.sub)}</div></div>
-   ${desk?`<div class="acts">${ins?`<button class="btn primary" data-act="checkout" data-id="${m.id}">${ic('out')} Check out</button>`:`<button class="btn primary" data-act="ciconfirm" data-id="${m.id}">${ic('check')} Photo matches. Check in</button><button class="btn" data-act="ciphoto" data-id="${m.id}">Photo does not match</button>`}<button class="btn" data-act="renew" data-id="${m.id}">Renew</button><button class="btn ghost" data-act="memopen" data-id="${m.id}">History</button></div>`:''}</article>`}
+   ${desk?`<div class="acts">${ins?`<button class="btn primary" data-act="checkout" data-id="${m.id}">${ic('out')} Check out</button>`:`<button class="btn primary" data-act="ciconfirm" data-id="${m.id}">${ic('check')} ${validPhoto(m.photo)?'Photo matches. Check in':'Photo required — entry will be refused'}</button><button class="btn" data-act="ciphoto" data-id="${m.id}">Photo does not match</button>`}<button class="btn" data-act="renew" data-id="${m.id}">Renew</button><button class="btn ghost" data-act="memopen" data-id="${m.id}">History</button></div>`:''}</article>`}
 function ciResults(){const q=ui.q.trim().toLowerCase();let h='';
   if(ui.ciMsg)h+=`<div class="msg ${ui.ciMsg.type}" role="status">${esc(ui.ciMsg.text)}${ui.ciMsg.renew?` <button class="btn sm" data-act="renew" data-id="${ui.ciMsg.renew}" style="margin-left:8px">Renew now</button>`:''}</div>`;
   if(!q)return h+'<div class="card flat muted">Type a name or ID number. The photo on screen must match the person at the desk before you confirm.</div>';
@@ -727,18 +748,23 @@ function ciRefresh(){const r=$('#ci-res');if(r)r.innerHTML=ciResults();const i=$
 function pgRegister(){
   if(ui.regDone){const m=ui.regDone;return `<div class="pg-head"><span class="eyebrow">Front desk</span><h1>Member registered</h1></div><div class="msg good">${esc(fullName(m))} is registered. Membership runs to ${fmtL(memExpiry(m.id))}.</div>${memberCard(m,false)}<div><button class="btn primary" data-act="regagain">Register another member</button></div>`}
   const pl=S.plans.filter(p=>p.on);
+  if(!pl.length)return '<div class="pg-head"><h1>Register member</h1></div><div class="msg warn" role="alert">No plans are available. Ask the manager to enable a plan before collecting cash or registering a member.</div>';
   return `<div class="pg-head"><span class="eyebrow">Front desk</span><h1>Register member</h1><p>Check the identity document against the person, then take their photo.</p></div>
   <form class="card form" data-form="register" novalidate>
    <div class="cols"><div class="fld"><label for="rg-f">First name</label><input id="rg-f" autocomplete="off"></div><div class="fld"><label for="rg-s">Surname</label><input id="rg-s" autocomplete="off"></div></div>
    <div class="cols"><div class="fld"><label for="rg-t">ID type</label><select id="rg-t">${['Student ID','National ID','Passport','Birth certificate'].map(t=>`<option>${t}</option>`).join('')}</select></div><div class="fld"><label for="rg-n">ID number</label><input id="rg-n" autocomplete="off"></div></div>
    <div class="fld"><span class="lab">Photo (required)</span><div class="photoup"><div class="prev" id="rg-prev">${ui.regPhoto?`<img src="${ui.regPhoto}" alt="Photo preview">`:'No photo yet'}</div><div><label class="btn" for="rg-photo">${ic('plus')} Take or choose photo</label><input id="rg-photo" type="file" accept="image/*" capture="user" data-change="regphoto" hidden><p class="hint small muted" style="margin-top:6px">On a phone this opens the camera. On a computer, choose an image file.</p></div></div></div>
-   <div class="cols"><div class="fld"><label for="rg-p">Temporary password</label><input id="rg-p" type="text" autocomplete="off"><span class="hint">At least 6 characters. The member can use it to log in.</span></div>
+   <div class="cols"><div class="fld"><label for="rg-p">Member-chosen password</label><input id="rg-p" type="password" autocomplete="new-password"><span class="hint">The member chooses a password of at least 8 characters.</span></div>
     <div class="fld"><label for="rg-l">Plan</label><select id="rg-l" data-change="regplan">${pl.map(p=>`<option value="${p.id}">${esc(p.name)} · ${E(p.price)} · ${p.days} days</option>`).join('')}</select></div>
     <div class="fld"><label for="rg-r">Cash receipt number</label><input id="rg-r" autocomplete="off" placeholder="e.g. R-2041"></div></div>
    <div class="msg info" id="rg-sum">${regSum(pl[0])}</div>
    <div class="msg" role="alert"></div><div><button class="btn primary" type="submit">Save member and record payment</button></div></form>`}
-function regSum(p){return p?`Cash to collect: ${E(p.price)}. Membership will run to ${fmtL(addDays(TODAY(),p.days))}.`:''}
-function downscale(file,max,cb){const r=new FileReader();r.onload=()=>{const im=new Image();im.onload=()=>{const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.round(im.width*k);c.height=Math.round(im.height*k);c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',.75))};im.src=r.result};r.readAsDataURL(file)}
+function regSum(p){return p?`Cash to collect: ${E(p.price)}. Membership will run to ${fmtL(calcExpiry(null,TODAY(),p.days).exp)}.`:''}
+function downscale(file,max,cb){
+  if(!['image/jpeg','image/png','image/webp'].includes(file.type)||file.size>5*1024*1024){toast('Choose a JPEG, PNG or WebP image no larger than 5 MB.');return}
+  const fail=()=>toast('The image could not be read. Choose another photo.');
+  const r=new FileReader();r.onerror=fail;r.onload=()=>{const im=new Image();im.onerror=fail;im.onload=()=>{if(!im.width||!im.height||im.width*im.height>40000000){fail();return}const k=Math.min(1,max/Math.max(im.width,im.height)),c=document.createElement('canvas');c.width=Math.max(1,Math.round(im.width*k));c.height=Math.max(1,Math.round(im.height*k));c.getContext('2d').drawImage(im,0,0,c.width,c.height);cb(c.toDataURL('image/jpeg',.8))};im.src=r.result};r.readAsDataURL(file);
+}
 
 /* ---------- front desk: members ---------- */
 function pgMembers(){return `<div class="pg-head"><span class="eyebrow">Front desk</span><h1>Members</h1><p>Search to see details and history. Members are never deleted.</p></div>
@@ -746,23 +772,24 @@ function pgMembers(){return `<div class="pg-head"><span class="eyebrow">Front de
 function memTable(){const q=ui.mq.trim().toLowerCase(),r=S.members.filter(m=>!q||fullName(m).toLowerCase().includes(q)||m.idNum.toLowerCase().includes(q));
   return `<div class="tblwrap"><table><thead><tr><th>Member</th><th>ID</th><th>Plan</th><th>Expires</th><th>Status</th><th></th></tr></thead><tbody>${r.map(m=>{const st=statusOf(m),e=memExpiry(m.id);return `<tr><td><div class="person">${avatar(fullName(m),m.photo)}<b>${esc(fullName(m))}</b></div></td><td class="mono small">${esc(m.idNum)}</td><td>${esc(memPlan(m))}</td><td class="mono">${e?fmtL(e):'–'}</td><td><span class="pill ${st.cls}">${st.t.split(' · ')[0]}</span></td><td><button class="btn sm" data-act="memopen" data-id="${m.id}">Open</button></td></tr>`}).join('')||'<tr><td colspan="6" class="muted">No members match.</td></tr>'}</tbody></table></div>`}
 function modalMember(m){const mg=ui.session.role==='manager',pays=S.payments.filter(p=>p.memberId===m.id).sort((a,b)=>a.date<b.date?1:-1),cks=S.checkins.filter(c=>c.m===m.id).sort((a,b)=>a.in<b.in?1:-1).slice(0,12),dn=S.denied.filter(d=>d.m===m.id);
-  const payTbl=mg?`<thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Receipt</th><th>New expiry</th><th>Taken by</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}</td><td>${esc(p.plan)}</td><td class="num">${E(p.amount)}</td><td class="mono">${esc(p.receipt)}</td><td class="mono">${fmtL(p.expiry)}</td><td>${esc(staffName(p.staff))}</td></tr>`).join('')}</tbody>`
-   :`<thead><tr><th>Date</th><th>Plan</th><th>Runs to</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}</td><td>${esc(p.plan)}</td><td class="mono">${fmtL(p.expiry)}</td></tr>`).join('')}</tbody>`;
+  const payTbl=mg?`<thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Receipt</th><th>New expiry</th><th>Taken by</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}<br><span class="small mono">${p.recordedAt?fmtT(p.recordedAt):'Time not recorded (legacy)'}</span></td><td>${esc(p.plan)}<br><span class="small muted">${p.days?p.days+' days':'Duration not recorded (legacy)'}</span></td><td class="num">${E(p.amount)}</td><td class="mono">${esc(p.receipt)}</td><td class="mono">${fmtL(p.expiry)}</td><td>${esc(staffName(p.staff))}</td></tr>`).join('')}</tbody>`
+   :`<thead><tr><th>Date</th><th>Plan</th><th>Runs to</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}<br><span class="small mono">${p.recordedAt?fmtT(p.recordedAt):'Time not recorded (legacy)'}</span></td><td>${esc(p.plan)}<br><span class="small muted">${p.days?p.days+' days':'Duration not recorded (legacy)'}</span></td><td class="mono">${fmtL(p.expiry)}</td></tr>`).join('')}</tbody>`;
   return `<div class="modal wide plain"><button class="xbtn" data-act="closemodal" aria-label="Close">${ic('x')}</button><div class="mb">${memberCard(m,false)}
    <div class="actions"><button class="btn primary" data-act="renew" data-id="${m.id}">Renew membership</button><button class="btn" data-act="togglemem" data-id="${m.id}">${m.active?'Suspend account':'Enable account'}</button></div>
+   <button class="btn" data-act="memedit" data-id="${m.id}">Edit member details and photo</button>
    <p class="small muted">Account access is separate from the paid membership dates. Suspending an account keeps the member, photo, payments, visits and denied attempts.</p>
    ${memberStatusHistory(m)}
-   ${mg?`<form class="form card flat" data-form="mempw" data-id="${m.id}" novalidate><h3>Reset member password</h3><div class="fld" style="max-width:360px"><label for="mp-pw">New password</label><input id="mp-pw" type="text" autocomplete="off"><span class="hint">At least 6 characters. This also clears any login lock.</span></div><div class="msg" role="alert"></div><div><button class="btn" type="submit">Set password</button></div></form>`:''}
+   ${mg?`<form class="form card flat" data-form="mempw" data-id="${m.id}" novalidate><h3>Reset member password</h3><div class="fld" style="max-width:360px"><label for="mp-pw">New password</label><input id="mp-pw" type="password" autocomplete="new-password"><span class="hint">At least 8 characters. This clears the login lock and requires a new password at the next member login.</span></div><div class="msg" role="alert"></div><div><button class="btn" type="submit">Set password</button></div></form>`:''}
    <div><h3 style="margin-bottom:6px">${mg?'Payments':'Membership history'}</h3><div class="tblwrap"><table>${payTbl}</table></div></div>
-   <div><h3 style="margin-bottom:6px">Recent check-ins</h3><div class="tblwrap"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Confirmed by</th></tr></thead><tbody>${cks.map(c=>`<tr><td>${fmtD(c.in.slice(0,10))}</td><td class="mono">${fmtT(c.in)}</td><td class="mono">${c.out?fmtT(c.out):'Inside'}</td><td>${esc(staffName(c.staff))}</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No check-ins yet.</td></tr>'}</tbody></table></div></div>
+   <div><h3 style="margin-bottom:6px">Recent check-ins</h3><div class="tblwrap"><table><thead><tr><th>Date</th><th>In</th><th>Out</th><th>Confirmed by</th><th>Checked out by</th></tr></thead><tbody>${cks.map(c=>`<tr><td>${fmtD(c.in.slice(0,10))}</td><td class="mono">${fmtT(c.in)}</td><td class="mono">${c.out?fmtT(c.out):'Inside'}</td><td>${esc(staffName(c.staff))}</td><td>${c.out?esc(c.outBy?staffName(c.outBy):c.outMethod==='AUTO'?'Automatic':'Not recorded (legacy)'):'–'}</td></tr>`).join('')||'<tr><td colspan="5" class="muted">No check-ins yet.</td></tr>'}</tbody></table></div></div>
    ${dn.length?`<div><h3 style="margin-bottom:6px">Denied attempts</h3><div class="tblwrap"><table><tbody>${dn.map(d=>`<tr><td>${fmtD(d.time.slice(0,10))} ${fmtT(d.time)}</td><td><span class="pill bad">${esc(d.reason)}</span></td></tr>`).join('')}</tbody></table></div></div>`:''}</div></div>`}
-function modalRenew(){const mo=ui.modal,m=S.members.find(x=>x.id===mo.id),pl=S.plans.filter(p=>p.on),p=S.plans.find(x=>x.id===mo.plan)||pl[0];mo.plan=p.id;
+function modalRenew(){const mo=ui.modal,m=S.members.find(x=>x.id===mo.id),pl=S.plans.filter(p=>p.on),p=pl.find(x=>x.id===mo.plan)||pl[0];if(!m||!p)return '<div class="modal plain"><button class="xbtn" data-act="closemodal" aria-label="Close">'+ic('x')+'</button><div class="mb msg warn" role="alert">No saleable plan is available. Ask the manager to enable a plan before collecting cash.</div></div>';mo.plan=p.id;
   return `<div class="modal plain"><button class="xbtn" data-act="closemodal" aria-label="Close">${ic('x')}</button><form class="mb form" data-form="renew" novalidate><div><span class="eyebrow">Renew membership</span><h2>${esc(fullName(m))}</h2></div>
    <div class="fld"><label for="rn-p">Plan</label><select id="rn-p" data-change="rnplan">${pl.map(x=>`<option value="${x.id}" ${x.id===p.id?'selected':''}>${esc(x.name)} · ${E(x.price)} · ${x.days} days</option>`).join('')}</select></div>
    <div id="rn-calc">${rnCalc(m,p)}</div>
    <div class="fld"><label for="rn-r">Cash receipt number</label><input id="rn-r" autocomplete="off" placeholder="e.g. R-2042"></div>
    <div class="msg" role="alert"></div><div class="actions"><button class="btn primary" type="submit">Confirm payment of ${E(p.price)}</button><button class="btn" type="button" data-act="closemodal">Cancel</button></div></form></div>`}
-function rnCalc(m,p){const cur=memExpiry(m.id),T=TODAY(),c=calcExpiry(cur,T,p.days);
+function rnCalc(m,p){if(!p)return '<p class="msg warn">Choose an available plan.</p>';const cur=memExpiry(m.id),T=TODAY(),c=calcExpiry(cur,T,p.days);
   return `<table class="calc"><tbody><tr><td>Current expiry</td><td>${cur?fmtL(cur)+(cur<T?' (expired)':''):'None'}</td></tr><tr><td>${c.mode==='extend'?'Days added to current expiry':'Days added from today'}</td><td>+${p.days}</td></tr><tr><td>New expiry</td><td>${fmtL(c.exp)}</td></tr></tbody></table>`}
 /* ---------- staff inbox / manager messages ---------- */
 function pgInbox(){const u=ui.session.id,ms=inbox(u);
@@ -799,7 +826,7 @@ function pgFinance(){const R=ui.finR,rg=finRange(R),T=TODAY(),pays=S.payments.fi
    <div class="card chart"><h3>Cash per month (E)</h3><p class="small muted" style="margin-bottom:8px">Last 6 months.</p>${bars(mv,ml,'Cash received per month')}</div></div>
   <div class="charts"><div class="card"><h3 style="margin-bottom:8px">By plan</h3><div class="tblwrap"><table><thead><tr><th>Plan</th><th class="num">Payments</th><th class="num">Cash</th><th class="num">Share</th></tr></thead><tbody>${tr(byPlan).map(([k,v])=>`<tr><td>${esc(k)}</td><td class="num">${v.n}</td><td class="num">${E(v.a)}</td><td class="num">${tot?Math.round(v.a/tot*100):0}%</td></tr>`).join('')||'<tr><td colspan="4" class="muted">No payments in this period.</td></tr>'}</tbody><tfoot><tr class="tfoot"><td>Total</td><td class="num">${pays.length}</td><td class="num">${E(tot)}</td><td class="num">${tot?'100%':'0%'}</td></tr></tfoot></table></div></div>
    <div class="card"><h3 style="margin-bottom:8px">Cash taken by staff</h3><div class="tblwrap"><table><thead><tr><th>Staff</th><th class="num">Payments</th><th class="num">Cash</th></tr></thead><tbody>${tr(byStaff).map(([k,v])=>`<tr><td>${esc(staffName(k))}</td><td class="num">${v.n}</td><td class="num">${E(v.a)}</td></tr>`).join('')||'<tr><td colspan="3" class="muted">No payments in this period.</td></tr>'}</tbody><tfoot><tr class="tfoot"><td>Total</td><td class="num">${pays.length}</td><td class="num">${E(tot)}</td></tr></tfoot></table></div></div></div>
-  <div class="card"><h3 style="margin-bottom:8px">Ledger</h3><div class="tblwrap scroll"><table><thead><tr><th>Date</th><th>Member</th><th>Plan</th><th>Receipt</th><th>Taken by</th><th class="num">Amount</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtD(p.date)}</td><td>${esc(memName(p))}</td><td>${esc(p.plan)}</td><td class="mono">${esc(p.receipt)}</td><td>${esc(staffName(p.staff))}</td><td class="num">${E(p.amount)}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">No payments in this period.</td></tr>'}</tbody><tfoot><tr class="tfoot"><td colspan="5">Total</td><td class="num">${E(tot)}</td></tr></tfoot></table></div></div>`}
+  <div class="card"><h3 style="margin-bottom:8px">Ledger</h3><div class="tblwrap scroll"><table><thead><tr><th>Date</th><th>Member</th><th>Plan</th><th>Receipt</th><th>Taken by</th><th class="num">Amount</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtD(p.date)}</td><td>${esc(memName(p))}</td><td>${esc(p.plan)}<br><span class="small muted">${p.days?p.days+' days':'Duration not recorded (legacy)'}</span></td><td class="mono">${esc(p.receipt)}</td><td>${esc(staffName(p.staff))}</td><td class="num">${E(p.amount)}</td></tr>`).join('')||'<tr><td colspan="6" class="muted">No payments in this period.</td></tr>'}</tbody><tfoot><tr class="tfoot"><td colspan="5">Total</td><td class="num">${E(tot)}</td></tr></tfoot></table></div></div>`}
 
 /* ---------- manager: member reports ---------- */
 function repData(){const T=TODAY(),ms=S.members;
@@ -808,9 +835,9 @@ function repData(){const T=TODAY(),ms=S.members;
 function pgReports(){const T=TODAY(),D=repData(),r=ui.rep,isP=r==='present',uniq=new Set(D.present.map(c=>c.m)).size;
   const chips=[['active','Active members',D.active.length],['lapsed','Lapsed members',D.lapsed.length],['neu','New this month',D.neu.length],['exp','Expiring in under 10 days',D.exp.length],['present',ui.repDate===T?'Present today':'Present on '+fmtD(ui.repDate),uniq]];
   let body;
-  if(isP)body=`<div class="fld" style="max-width:220px"><label for="rep-date">Day</label><input id="rep-date" type="date" max="${T}" value="${ui.repDate}" data-change="repdate"></div>${dow(ui.repDate)===6?'<div class="msg info">The gym is closed on Sundays.</div>':''}
-   <div class="tblwrap"><table><thead><tr><th>Member</th><th>ID</th><th>Checked in</th><th>Checked out</th><th>Confirmed by</th></tr></thead><tbody>${D.present.map(c=>{const m=S.members.find(x=>x.id===c.m);return `<tr><td><button class="linkbtn" data-act="memopen" data-id="${m.id}"><span class="person">${avatar(fullName(m),m.photo)}<b>${esc(fullName(m))}</b></span></button></td><td class="mono small">${esc(m.idNum)}</td><td class="mono">${fmtT(c.in)}</td><td class="mono">${c.out?fmtT(c.out):'<span class="pill blue">Inside</span>'}</td><td>${esc(staffName(c.staff))}</td></tr>`}).join('')||'<tr><td colspan="5" class="muted">Nobody was checked in on this day.</td></tr>'}</tbody></table></div>`;
-  else{const list=D[r];body=`<div class="tblwrap"><table><thead><tr><th>Member</th><th>ID</th><th>Plan</th><th>Registered</th><th>Expires</th><th class="num">Days left</th><th>Last visit</th></tr></thead><tbody>${list.map(m=>{const l=memLeft(m),e=memExpiry(m.id),lv=lastVisit(m);return `<tr><td><button class="linkbtn" data-act="memopen" data-id="${m.id}"><span class="person">${avatar(fullName(m),m.photo)}<b>${esc(fullName(m))}</b></span></button></td><td class="mono small">${esc(m.idType)}<br>${esc(m.idNum)}</td><td>${esc(memPlan(m))}</td><td class="mono">${fmtL(m.reg)}</td><td class="mono">${e?fmtL(e):'–'}</td><td class="num">${l<0?`<span class="pill bad">${-l} d ago</span>`:l<10?`<span class="pill warn">${l}</span>`:l}</td><td class="mono">${lv?fmtL(lv):'Never'}</td></tr>`}).join('')||'<tr><td colspan="7" class="muted">No members in this list.</td></tr>'}</tbody></table></div>`}
+  if(isP)body=`<div class="fld" style="max-width:220px"><label for="rep-date">Day</label><input id="rep-date" type="date" max="${T}" value="${ui.repDate}" data-change="repdate"></div>${hoursFor(ui.repDate).closed?'<div class="msg info">Date-specific hours take precedence. A whole-gym closure also closes every area.</div>':''}
+   <div class="tblwrap"><table><thead><tr><th>Member</th><th>Member ref.</th><th>Checked in</th><th>Checked out</th><th>Confirmed by</th></tr></thead><tbody>${D.present.map(c=>{const m=S.members.find(x=>x.id===c.m);return `<tr><td><button class="linkbtn" data-act="memopen" data-id="${m.id}"><span class="person">${avatar(fullName(m))}<b>${esc(fullName(m))}</b></span></button></td><td class="mono small">${esc(m.id)}</td><td class="mono">${fmtT(c.in)}</td><td class="mono">${c.out?fmtT(c.out):'<span class="pill blue">Inside</span>'}</td><td>${esc(staffName(c.staff))}</td></tr>`}).join('')||'<tr><td colspan="5" class="muted">Nobody was checked in on this day.</td></tr>'}</tbody></table></div>`;
+  else{const list=D[r];body=`<div class="tblwrap"><table><thead><tr><th>Member</th><th>Member ref.</th><th>Plan</th><th>Registered</th><th>Expires</th><th class="num">Days left</th><th>Last visit</th></tr></thead><tbody>${list.map(m=>{const l=memLeft(m),e=memExpiry(m.id),lv=lastVisit(m);return `<tr><td><button class="linkbtn" data-act="memopen" data-id="${m.id}"><span class="person">${avatar(fullName(m))}<b>${esc(fullName(m))}</b></span></button></td><td class="mono small">Member reference<br>${esc(m.id)}</td><td>${esc(memPlan(m))}</td><td class="mono">${fmtL(m.reg)}</td><td class="mono">${e?fmtL(e):'–'}</td><td class="num">${l<0?`<span class="pill bad">${-l} d ago</span>`:l<10?`<span class="pill warn">${l}</span>`:l}</td><td class="mono">${lv?fmtL(lv):'Never'}</td></tr>`}).join('')||'<tr><td colspan="7" class="muted">No members in this list.</td></tr>'}</tbody></table></div>`}
   return `<div class="pg-head"><span class="eyebrow">Records</span><h1>Member reports</h1><p>The exact people behind each figure on the dashboard.</p></div>
   <div class="seg" role="group" aria-label="Report">${chips.map(([k,l,n])=>`<button class="chip ${k===r?'on':''}" data-act="report" data-r="${k}" aria-pressed="${k===r}">${l} <small>${n}</small></button>`).join('')}</div>
   <div class="card">${body}</div>`}
@@ -833,7 +860,7 @@ function setMemberStatuses(ids,enabled){
   const next={...S,members:S.members.map(m=>changed.includes(m)?{...m,active:enabled}:m),
     memberStatusLog:[...(S.memberStatusLog||[]),...changed.map(m=>({memberId:m.id,enabled,at,by}))]};
   // Publish the new in-memory state only after the complete browser write succeeds.
-  try{localStorage.setItem(KEY,JSON.stringify(next))}catch(e){toast('Account status was not saved. Browser storage is unavailable or full. Try again.');return false}
+  try{const text=JSON.stringify(next);if(!API_MODE)localStorage.setItem(KEY,text);committedState=text}catch(e){toast('Account status was not saved. Browser storage is unavailable or full. Try again.');return false}
   S=next;return true;
 }
 function memberStatusHistory(m){const events=(S.memberStatusLog||[]).filter(x=>x.memberId===m.id).slice().reverse();
@@ -850,30 +877,46 @@ function calendarHtml(m){const{y,m:mo}=ui.cal,T=TODAY(),first=new Date(y,mo,1),o
     cells+=`<div class="cd ${shut?'shut':''} ${here?'here':''} ${fut?'future':''} ${ds===T?'today':''}" ${here?`aria-label="${d} ${MONF[mo]}, present"`:''}><span class="n">${d}</span>${here?'<svg class="tick" viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="11"/><path d="M7 12.5l3.2 3.2L17 9"/></svg>':''}${shut?`<i>${dow(ds)===6?'Closed':'Closed'}</i>`:''}</div>`}
   const cur=now0.getFullYear()*12+now0.getMonth(),vw=y*12+mo,rg=pd(reg),minv=rg.getFullYear()*12+rg.getMonth();
   return `<div class="card"><div class="calhead"><h3>${MONF[mo]} ${y}</h3><div class="actions"><button class="btn sm" data-act="calprev" aria-label="Previous month" ${vw<=minv?'disabled':''}>${ic('left')}</button><button class="btn sm" data-act="calnext" aria-label="Next month" ${vw>=cur?'disabled':''}>${ic('right')}</button></div></div>
-   <div class="cal">${cells}</div><div class="legend"><span><svg class="tick" viewBox="0 0 24 24" style="width:18px;margin:0"><circle cx="12" cy="12" r="11"/><path d="M7 12.5l3.2 3.2L17 9"/></svg> Present</span><span><i class="sw" style="background:repeating-linear-gradient(135deg,transparent 0 3px,var(--line) 3px 5px);border:1px solid var(--line)"></i> Gym closed (Sundays)</span><span class="mono">${vis} visit${vis===1?'':'s'} in ${open} open day${open===1?'':'s'}</span></div></div>`}
+   <div class="cal">${cells}</div><div class="legend"><span><svg class="tick" viewBox="0 0 24 24" style="width:18px;margin:0"><circle cx="12" cy="12" r="11"/><path d="M7 12.5l3.2 3.2L17 9"/></svg> Present</span><span><i class="sw" style="background:repeating-linear-gradient(135deg,transparent 0 3px,var(--line) 3px 5px);border:1px solid var(--line)"></i> Gym closed</span><span class="mono">${vis} visit${vis===1?'':'s'} in ${open} open day${open===1?'':'s'}</span></div></div>`}
 function viewMember(){if(ui.peek)return viewPublic();
-  const m=me(),T=TODAY(),l=memLeft(m),e=memExpiry(m.id),lastp=S.payments.filter(p=>p.memberId===m.id).sort((a,b)=>a.expiry<b.expiry?1:-1)[0],pays=S.payments.filter(p=>p.memberId===m.id).sort((a,b)=>a.date<b.date?1:-1),st=gymStatus(),live=liveNotices();
-  const ban=l<0?`<div class="msg bad"><b>Your membership expired on ${fmtL(e)}.</b> Renew at the front desk to check in again.</div>`:l<10?`<div class="msg warn"><b>${l} day${l===1?'':'s'} left.</b> Renew at the front desk before ${fmtL(e)} so you can keep checking in.</div>`:'';
+  if(me().mustChangePassword)return passwordChangeView();
+  const m=me(),T=TODAY(),l=memLeft(m),e=memExpiry(m.id),lastp=latestPayment(m.id),pays=S.payments.filter(p=>p.memberId===m.id).sort((a,b)=>a.date<b.date?1:-1),st=gymStatus(),live=liveNotices(),up=upcomingNotices();
+  const ban=!e?'<div class="msg warn">No membership payment has been recorded. Visit the front desk to choose a plan.</div>':l<0?`<div class="msg bad"><b>Your membership expired on ${fmtL(e)}.</b> Renew at the front desk to check in again.</div>`:l<10?`<div class="msg warn"><b>${l} day${l===1?'':'s'} left.</b> Renew at the front desk before ${fmtL(e)} so you can keep checking in.</div>`:'';
   return `${appBar()}<main class="wrap portal">
    <div class="greet"><span class="eyebrow">Member</span><h1>${esc(fullName(m))}</h1><p class="muted small mono">${esc(m.idType)} ${esc(mask(m.idNum))} · Member since ${fmtL(m.reg)}</p></div>${ban}
    <div class="pgrid"><div class="daysbox"><span class="eyebrow">Days left on your subscription</span><span class="daysnum ${l<0?'exp':''}">${Math.max(l,0)}</span>
      <div class="meter" role="img" aria-label="Subscription remaining"><i style="width:${Math.max(0,Math.min(100,l/(lastp?Math.max(1,diffDays(lastp.expiry,lastp.date)):30)*100))}%"></i></div>
-     <p>${esc(memPlan(m))} · ${l<0?'Expired '+fmtL(e):'Runs to '+fmtL(e)}</p></div>
+     <p>${esc(memPlan(m))} · ${!e?'No paid membership yet':l<0?'Expired '+fmtL(e):'Runs to '+fmtL(e)}</p></div>
     <div class="card stack" style="align-content:start"><h3>Today at the gym</h3><div class="actions"><span class="pill ${st.open?'good':'bad'}">${esc(st.label)}</span><span class="mono small">${st.h.closed?esc(st.h.reason||'Closed'):st.h.open+' – '+st.h.close}</span></div>
      ${live.length?`<ul class="nlist">${live.map(n=>noteItem(n)).join('')}</ul>`:'<p class="muted">No notices today.</p>'}</div></div>
+   ${up.length?`<div class="card"><h3>Coming up</h3><ul class="nlist">${up.map(n=>noteItem(n,true)).join('')}</ul></div>`:''}
+   <div class="card"><h3>Gym and area hours</h3><p class="muted">Today: ${hoursFor(T).closed?'Gym closed':hoursFor(T).open+' – '+hoursFor(T).close}</p><ul>${S.services.filter(s=>s.on).map(s=>{const h=hoursFor(T,s.id);return `<li>${esc(s.name)}: ${h.closed?'Closed':h.open+' – '+h.close}</li>`}).join('')}</ul><button class="btn" data-act="peek">Weekly hours and date changes</button></div>
    ${calendarHtml(m)}
-   <div class="card"><h3 style="margin-bottom:8px">Payment history</h3><div class="tblwrap"><table><thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Runs to</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}</td><td>${esc(p.plan)}</td><td class="num">${E(p.amount)}</td><td class="mono">${fmtL(p.expiry)}</td></tr>`).join('')}</tbody></table></div></div></main>`}
+   <div class="card"><h3 style="margin-bottom:8px">Payment history</h3><div class="tblwrap"><table><thead><tr><th>Date</th><th>Plan</th><th class="num">Amount</th><th>Runs to</th></tr></thead><tbody>${pays.map(p=>`<tr><td>${fmtL(p.date)}<br><span class="small mono">${p.recordedAt?fmtT(p.recordedAt):'Time not recorded (legacy)'}</span></td><td>${esc(p.plan)}<br><span class="small muted">${p.days?p.days+' days':'Duration not recorded (legacy)'}</span></td><td class="num">${E(p.amount)}</td><td class="mono">${fmtL(p.expiry)}</td></tr>`).join('')}</tbody></table></div></div></main>`}
 
 /* ---------- modal root ---------- */
 function renderModal(){const r=$('#modal-root'),mo=ui.modal;if(!mo){r.innerHTML='';return}
-  let h='';if(mo.t==='svc')h=modalService(S.services.find(s=>s.id===mo.id));else if(mo.t==='member')h=modalMember(S.members.find(m=>m.id===mo.id));else if(mo.t==='renew')h=modalRenew();
-  r.innerHTML=`<div class="mback" data-act="backdrop"><div role="dialog" aria-modal="true" style="display:contents">${h}</div></div>`;
+  let h='';if(mo.t==='svc')h=modalService(S.services.find(s=>s.id===mo.id));else if(mo.t==='editmember')h=modalEditMember(S.members.find(m=>m.id===mo.id));else if(mo.t==='member')h=modalMember(S.members.find(m=>m.id===mo.id));else if(mo.t==='renew')h=modalRenew();
+  r.innerHTML=`<div class="mback" data-act="backdrop"><div role="dialog" aria-modal="true" aria-label="Gym details" style="display:contents">${h}</div></div>`;
   const f=r.querySelector('.xbtn');if(f)f.focus()}
-function openModal(m){ui.modal=m;renderModal()}
+let modalReturnFocus=null;function openModal(m){modalReturnFocus=document.activeElement;ui.modal=m;renderModal()}
 function render(){const a=$('#app');let h;
   if(!ui.session)h=ui.view==='login'?viewLogin():viewPublic();else if(ui.session.role==='member')h=viewMember();else h=viewApp();
   a.innerHTML=h;renderModal()}
 
+function requireRole(roles){const actor=me();if(!ui.session||!roles.includes(ui.session.role)||ui.session.role!=='member'&&(!actor?.on||actor.role!==ui.session.role)||ui.session.role==='member'&&actor?.mustChangePassword&&!roles.includes('password'))throw new Error('You are not authorized to perform this action.')}
+function safeAction(fn,form){try{return fn()}catch(e){const message=e.message||'The change could not be saved.';if(form?.querySelector?.('.msg'))setMsg(form,message);else toast(message)}}
+function installGuards(){
+ const staffActions=['ciconfirm','ciphoto','cinomatch','checkout','renew','memopen','togglemem','regagain','memedit'];
+ const managerActions=['svcnew','svcedit','svccancel','insadd','insdel','sladd','sldel','slotday','svcphotoclear','ovdel','noteedit','noticeeditcancel','notecancel','planadd','planduration','stedit','pwedit','pwcancel','pwsave','stsave','sttoggle','report','finrange','suspendask','suspendallask','suspendyes','suspendallyes','msgdel'];
+ if(API_MODE){A.logout=serverLogout;const originalNav=A.nav;A.nav=t=>ui.session?.role==='staff'&&t.dataset.tab==='msgs'?runServer('readmessages',{},null,()=>originalNav(t)):originalNav(t)}
+ for(const name of [...staffActions,...managerActions]){const fn=A[name];if(fn)A[name]=(...args)=>safeAction(()=>{requireRole(staffActions.includes(name)?['staff','manager']:['manager']);if(API_MODE&&['memopen','memedit','renew'].includes(name)){if(name==='memedit')ui.editPhoto=null;return serverMemberView(args[0],name==='memopen'?'member':name==='memedit'?'editmember':'renew')}return API_MODE&&SERVER_ACTIONS[name]?serverAction(name,args[0]):fn(...args)})}
+}
+function modalEditMember(m){if(!m)return '';return `<div class="modal plain"><button class="xbtn" data-act="closemodal" aria-label="Close">${ic('x')}</button><form class="mb form" data-form="memberedit" data-id="${m.id}" novalidate><h2>Edit member</h2><p>Verify any identity change against the physical document.</p><div class="fld"><label for="me-f">First name</label><input id="me-f" value="${esc(m.first)}"></div><div class="fld"><label for="me-s">Surname</label><input id="me-s" value="${esc(m.sur)}"></div><div class="fld"><label for="me-t">ID type</label><select id="me-t">${['Student ID','National ID','Passport','Birth certificate'].map(t=>`<option ${m.idType===t?'selected':''}>${t}</option>`).join('')}</select></div><div class="fld"><label for="me-n">ID number</label><input id="me-n" value="${esc(m.idNum)}"></div><div class="fld"><label for="me-photo">Replace required photo</label><input id="me-photo" type="file" accept="image/jpeg,image/png,image/webp" data-change="editphoto"><span id="me-photostatus">${validPhoto(ui.editPhoto||m.photo)?'Photo present':'A valid photo is required'}</span></div><div class="msg" role="alert"></div><button class="btn primary" type="submit">Save member details</button></form></div>`}
+function saveMemberEdit(f){const m=S.members.find(m=>m.id===f.dataset.id),v=id=>f.querySelector('#'+id).value.trim(),first=v('me-f'),sur=v('me-s'),idType=v('me-t'),idNum=v('me-n'),photo=ui.editPhoto||m.photo;
+ if(!['Student ID','National ID','Passport','Birth certificate'].includes(idType))return setMsg(f,'Choose a valid identity document.');if(!first||!sur||!idNum)return setMsg(f,'First name, surname and ID are required.');if(S.members.some(x=>x.id!==m.id&&x.idType===idType&&x.idNum.toLowerCase()===idNum.toLowerCase()))return setMsg(f,'That identity is already registered.');if(!validPhoto(photo))return setMsg(f,'A valid photo is required.');Object.assign(m,{first,sur,idType,idNum,photo});save();ui.editPhoto=null;ui.modal={t:'member',id:m.id};render();toast('Member details saved.')}
+function passwordChangeView(){return `${appBar()}<main class="wrap loginwrap"><form class="card form" data-form="changepw" novalidate><h2>Choose a new password</h2><p>Your temporary password must be replaced before you can use the member portal.</p><div class="fld"><label for="cp-old">Current temporary password</label><input id="cp-old" type="password" autocomplete="current-password"></div><div class="fld"><label for="cp-new">New password</label><input id="cp-new" type="password" autocomplete="new-password"></div><div class="fld"><label for="cp-confirm">Confirm new password</label><input id="cp-confirm" type="password" autocomplete="new-password"></div><div class="msg" role="alert"></div><button class="btn primary" type="submit">Change password</button></form></main>`}
+function changeOwnPassword(f){if(ui.session?.role!=='member')throw new Error('Sign in as a member first.');const m=me(),v=id=>f.querySelector('#'+id).value,pw=v('cp-new');if(v('cp-old')!==m.pw)return setMsg(f,'The current password is not correct.');if(pw.length<8||pw===m.pw||pw!==v('cp-confirm'))return setMsg(f,'Use a different password of at least 8 characters and confirm it exactly.');m.pw=pw;m.mustChangePassword=false;save();render();toast('Password changed.')}
 /* ---------- events ---------- */
 const A={
   home(){ui.view='public';ui.peek=!!ui.session;render();window.scrollTo(0,0)},
@@ -885,22 +928,24 @@ const A={
   bellopen(){window.scrollTo(0,0);const p=$('#bellpanel');p.hidden=false;$('.bell').setAttribute('aria-expanded','true')},
   scroll(t){const el=document.getElementById(t.dataset.to);el&&el.scrollIntoView({behavior:'smooth',block:'start'})},
   svc(t){openModal({t:'svc',id:t.dataset.id})},
-  closemodal(){ui.modal=null;renderModal()},
+  closemodal(){ui.modal=null;renderModal();modalReturnFocus?.focus?.()},
   backdrop(t,e){if(e.target===t)A.closemodal()},
   nav(t){nav(t.dataset.tab)},
-  resetdemo(){S=seed();save();ui.loginErr='';toast('Demo data reset');render()},
+  resetdemo(){if(API_MODE||ui.session)return;S=seed();S.hours.push({closed:true,open:'',close:''});S.areaHours={};S.audit=[];save();ui.loginErr='';toast('Demo data reset');render()},
   calprev(){const c=ui.cal;c.m--;if(c.m<0){c.m=11;c.y--}render()},
   calnext(){const c=ui.cal;c.m++;if(c.m>11){c.m=0;c.y++}render()},
   /* check-in */
   ciconfirm(t){const m=S.members.find(x=>x.id===t.dataset.id),T=nowStr(),l=memLeft(m);
+    if(!m)return;
     if(!m.active){addDenied(m.idNum,m,'SUSPENDED');ui.ciMsg={type:'bad',text:'Blocked: this account is suspended. The attempt is logged.'}}
-    else if(l<0){addDenied(m.idNum,m,'Expired');ui.ciMsg={type:'bad',text:`Blocked: ${fullName(m)}'s membership expired on ${fmtL(memExpiry(m.id))}. The attempt is logged.`,renew:m.id}}
-    else if(isInside(m.id)){addDenied(m.idNum,m,'Already inside');ui.ciMsg={type:'bad',text:`${fullName(m)} is already checked in.`}}
+    else if(l<0){addDenied(m.idNum,m,'EXPIRED');ui.ciMsg={type:'bad',text:`Blocked: ${fullName(m)}'s membership expired on ${fmtL(memExpiry(m.id))}. The attempt is logged.`,renew:m.id}}
+    else if(!validPhoto(m.photo)){addDenied(m.idNum,m,'PHOTO_NOT_CONFIRMED');ui.ciMsg={type:'bad',text:'Entry refused: a valid member photo is required. Update the member record first.'}}
+    else if(isInside(m.id)){addDenied(m.idNum,m,'ALREADY_INSIDE');ui.ciMsg={type:'bad',text:`${fullName(m)} is already checked in.`}}
     else{S.checkins.push({id:uid('c'),m:m.id,in:T,out:null,staff:ui.session.id});save();ui.ciMsg={type:l<10?'warn':'good',text:`${fullName(m)} checked in at ${T.slice(11)}. ${l} day${l===1?'':'s'} left${l<10?'. Tell the member to renew soon.':'.'}`}}
     ciRefresh()},
-  ciphoto(t){const m=S.members.find(x=>x.id===t.dataset.id);addDenied(m.idNum,m,'Photo not confirmed');ui.ciMsg={type:'bad',text:'Entry refused: photo did not match. The attempt is logged.'};ciRefresh()},
-  cinomatch(){addDenied(ui.q.trim(),null,'Unknown ID');ui.ciMsg={type:'bad',text:'Entry refused: unknown ID. The attempt is logged.'};ui.q='';const i=$('#ci-q');if(i)i.value='';ciRefresh()},
-  checkout(t){const c=isInside(t.dataset.id);if(c){c.out=nowStr();save()}const m=S.members.find(x=>x.id===t.dataset.id);ui.ciMsg={type:'info',text:`${fullName(m)} checked out at ${c?c.out.slice(11):''}.`};
+  ciphoto(t){const m=S.members.find(x=>x.id===t.dataset.id);addDenied(m.idNum,m,'PHOTO_NOT_CONFIRMED');ui.ciMsg={type:'bad',text:'Entry refused: photo did not match. The attempt is logged.'};ciRefresh()},
+  cinomatch(){addDenied(ui.q.trim(),null,'UNKNOWN_ID');ui.ciMsg={type:'bad',text:'Entry refused: unknown ID. The attempt is logged.'};ui.q='';const i=$('#ci-q');if(i)i.value='';ciRefresh()},
+  checkout(t){const c=isInside(t.dataset.id);if(c){c.out=nowStr();c.outBy=ui.session.id;c.outMethod='MANUAL';save()}const m=S.members.find(x=>x.id===t.dataset.id);ui.ciMsg={type:'info',text:`${fullName(m)} checked out at ${c?c.out.slice(11):''}.`};
     if(ui.tab==='checkin')ciRefresh();else render()},
   renew(t){openModal({t:'renew',id:t.dataset.id,plan:null})},
   memopen(t){openModal({t:'member',id:t.dataset.id})},
@@ -917,16 +962,16 @@ const A={
   slotday(t){const s=ui.draft.slots[+t.dataset.i],d=+t.dataset.d,k=s.days.indexOf(d);k>=0?s.days.splice(k,1):s.days.push(d);render()},
   svcphotoclear(){ui.draft.photo=null;render()},
   /* hours */
-  ovdel(t){S.overrides=S.overrides.filter(o=>o.id!==t.dataset.id);save();toast('Change removed');render()},
+  ovdel(t){const o=S.overrides.find(o=>o.id===t.dataset.id);if(!o)return;const before={...o};o.cancelled=true;o.cancelledAt=nowStr();audit('time_overrides',o.id,'CANCEL',before,o);save();toast('Change cancelled. History retained.');render()},
   noteedit(t){ui.noticeEdit=t.dataset.id;render();window.scrollTo(0,$('#nt-m').getBoundingClientRect().top+scrollY-120)},
   noticeeditcancel(){ui.noticeEdit=null;render()},
-  notecancel(t){const n=S.notices.find(x=>x.id===t.dataset.id);n.cancelled=true;save();toast('Notice cancelled. It is gone from the public page.');render()},
-  planadd(){S.plans.push({id:uid('p'),name:'New plan',price:0,days:30,on:false});save();render()},
+  notecancel(t){const n=S.notices.find(x=>x.id===t.dataset.id);if(!n||n.cancelled)return;const before={...n};n.cancelled=true;n.cancelledAt=nowStr();n.updatedBy=ui.session.id;n.updatedAt=nowStr();audit('notices',n.id,'CANCEL',before,n);save();toast('Notice cancelled. It is gone from the public page.');render()},
+  planadd(){S.plans.push({id:uid('p'),name:'New plan '+S.nextId,price:0,days:30,on:false});save();render()},
   /* staff */
   stedit(t){ui.staffEdit=t.dataset.u;ui.staffPw=null;render()},
   pwedit(t){ui.staffPw=t.dataset.u;ui.staffEdit=null;render();const i=$('#sp-p');i&&i.focus()},
   pwcancel(){ui.staffEdit=null;ui.staffPw=null;render()},
-  pwsave(t){const v=$('#sp-p').value;if(v.length<6){toast('Use at least 6 characters');return}S.staff.find(x=>x.u===t.dataset.u).pw=v;save();ui.staffPw=null;toast('Password changed');render()},
+  pwsave(t){const v=$('#sp-p').value;if(v.length<8){toast('Use at least 8 characters');return}S.staff.find(x=>x.u===t.dataset.u).pw=v;save();ui.staffPw=null;toast('Password changed');render()},
   stsave(t){const a=S.staff.find(x=>x.u===t.dataset.u),n=$('#se-n').value.trim(),u=$('#se-u').value.trim().toLowerCase();
     if(!n||!u){toast('Name and username are required');return}if(u!==a.u&&S.staff.some(x=>x.u===u)){toast('That username is taken');return}
     S.staffLog.forEach(x=>{if(x.u===a.u)x.u=u});S.checkins.forEach(x=>{if(x.staff===a.u)x.staff=u});S.payments.forEach(x=>{if(x.staff===a.u)x.staff=u});S.denied.forEach(x=>{if(x.staff===a.u)x.staff=u});S.notices.forEach(x=>{if(x.by===a.u)x.by=u});
@@ -934,6 +979,8 @@ const A={
     a.name=n;a.u=u;save();ui.staffEdit=null;toast('Staff details saved');render()},
   sttoggle(t){const a=S.staff.find(x=>x.u===t.dataset.u);a.on=!a.on;save();toast(a.on?'Account enabled':'Account disabled. They can no longer log in.');render()}
 };
+A.memedit=t=>{ui.editPhoto=null;openModal({t:'editmember',id:t.dataset.id})};
+A.planduration=t=>{const input=$('#pl-d'+t.dataset.i);if(input)input.value=t.dataset.days};
 A.report=t=>{ui.rep=t.dataset.r;if(ui.rep==='present')ui.repDate=TODAY();nav('reports')};
 A.finrange=t=>{ui.finR=t.dataset.r;render()};
 A.suspendask=t=>{if(!canManageMembers(true))return;ui.suspendAsk=t.dataset.id;render()};
@@ -947,51 +994,69 @@ A.msgdel=t=>{S.staffMsgs=S.staffMsgs.filter(x=>x.id!==t.dataset.id);save();toast
 document.addEventListener('click',e=>{
   if(!e.target.closest('.bellwrap')){const p=$('#bellpanel');if(p&&!p.hidden){p.hidden=true;const b=$('.bell');b&&b.setAttribute('aria-expanded','false')}}
   const t=e.target.closest('[data-act]');if(!t)return;const f=A[t.dataset.act];if(f){if(t.tagName==='A')e.preventDefault();f(t,e)}});
-document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.modal)A.closemodal()});
+document.addEventListener('keydown',e=>{if(e.key==='Escape'&&ui.modal)A.closemodal();if(e.key==='Tab'&&ui.modal){const nodes=[...document.querySelectorAll('#modal-root button:not([disabled]),#modal-root input:not([disabled]),#modal-root select,#modal-root textarea,#modal-root a[href]')].filter(n=>!n.hidden);const first=nodes[0],last=nodes.at(-1);if(e.shiftKey&&document.activeElement===first){e.preventDefault();last?.focus()}else if(!e.shiftKey&&document.activeElement===last){e.preventDefault();first?.focus()}}});
 document.addEventListener('input',e=>{const t=e.target;
+  if(API_MODE&&['ci','mem'].includes(t.dataset.live)){serverSearch(t);return}
   if(t.dataset.live==='ci'){ui.q=t.value;ui.ciMsg=null;ciRefresh()}
   else if(t.dataset.live==='mem'){ui.mq=t.value;$('#mem-tbl').innerHTML=memTable()}
   else if(t.dataset.dr&&ui.draft){const p=t.dataset.dr;let v=t.type==='checkbox'?t.checked:t.value;setPath(ui.draft,p,v)}});
-document.addEventListener('change',e=>{const t=e.target,k=t.dataset.change;if(!k)return;
+document.addEventListener('change',e=>safeAction(()=>{const t=e.target,k=t.dataset.change;if(!k)return;
+  if(k==='hoursscope'){ui.hoursScope=t.value||null;render();return}
   if(k==='repdate'){ui.repDate=t.value||TODAY();render();return}
   if(k==='regphoto'&&t.files[0])downscale(t.files[0],360,u=>{ui.regPhoto=u;$('#rg-prev').innerHTML=`<img src="${u}" alt="Photo preview">`});
+  if(k==='editphoto'&&t.files[0])downscale(t.files[0],360,u=>{ui.editPhoto=u;$('#me-photostatus').textContent='Replacement photo ready'});
   if(k==='svcphoto'&&t.files[0])downscale(t.files[0],900,u=>{ui.draft.photo=u;render()});
   if(k==='regplan')$('#rg-sum').textContent=regSum(S.plans.find(p=>p.id===t.value));
-  if(k==='rnplan'){ui.modal.plan=t.value;const m=S.members.find(x=>x.id===ui.modal.id),p=S.plans.find(x=>x.id===t.value);$('#rn-calc').innerHTML=rnCalc(m,p);const b=$('[data-form=renew] .btn.primary');b.textContent='Confirm payment of '+E(p.price)}});
-document.addEventListener('submit',e=>{e.preventDefault();const f=e.target,k=f.dataset.form;if(!k)return;const v=id=>(f.querySelector('#'+id)||{}).value;const T=TODAY();
+  if(k==='rnplan'){ui.modal.plan=t.value;const m=S.members.find(x=>x.id===ui.modal.id),p=S.plans.find(x=>x.id===t.value);$('#rn-calc').innerHTML=rnCalc(m,p);const b=$('[data-form=renew] .btn.primary');if(b)b.textContent=p?'Confirm payment of '+E(p.price):'No plan available'}},e.target.closest?.('form')));
+document.addEventListener('submit',e=>safeAction(()=>{e.preventDefault();const f=e.target,k=f.dataset.form;if(!k)return;const v=id=>(f.querySelector('#'+id)||{}).value;const T=TODAY();
+  if(API_MODE)return serverSubmit(f);
   if(k==='login')return doLogin(f);
+  if(k==='changepw')return changeOwnPassword(f);
+  requireRole(['register','renew','memberedit'].includes(k)?['staff','manager']:['manager']);
+  if(k==='memberedit')return saveMemberEdit(f);
   if(k==='register'){const first=v('rg-f').trim(),sur=v('rg-s').trim(),t=v('rg-t'),n=v('rg-n').trim(),pw=v('rg-p'),pl=S.plans.find(p=>p.id===v('rg-l')),rc=v('rg-r').trim();
+    if(!['Student ID','National ID','Passport','Birth certificate'].includes(t))return setMsg(f,'Choose a valid identity document.');
     if(!first||!sur||!n)return setMsg(f,'Enter the first name, surname and ID number from the document.');
     const dup=S.members.find(m=>m.idType===t&&m.idNum.toLowerCase()===n.toLowerCase());if(dup)return setMsg(f,`This ${t} is already registered to ${fullName(dup)}. Open them from Members instead.`);
-    if(!ui.regPhoto)return setMsg(f,'A photo is required before the member can be saved.');
-    if(pw.length<6)return setMsg(f,'The password needs at least 6 characters.');
+    if(!validPhoto(ui.regPhoto))return setMsg(f,'A valid photo is required before the member can be saved.');
+    availablePlan(v('rg-l'));
+    if(pw.length<8)return setMsg(f,'The password needs at least 8 characters.');
     if(!rc)return setMsg(f,'Enter the receipt number for the cash payment.');if(S.payments.some(p=>p.receipt.toLowerCase()===rc.toLowerCase()))return setMsg(f,'That receipt number has already been used.');
     const m={id:uid('m'),first,sur,idType:t,idNum:n,pw,photo:ui.regPhoto,reg:T,active:true,fails:0,lock:0};S.members.push(m);
-    S.payments.push({id:uid('pay'),memberId:m.id,planId:pl.id,plan:pl.name,amount:pl.price,date:T,expiry:addDays(T,pl.days),receipt:rc,staff:ui.session.id});save();ui.regPhoto=null;ui.regDone=m;toast('Member saved');render();return}
-  if(k==='renew'){const mo=ui.modal,m=S.members.find(x=>x.id===mo.id),p=S.plans.find(x=>x.id===mo.plan),rc=v('rn-r').trim();
+    S.payments.push(paymentFor(m,pl,rc));save();ui.regPhoto=null;ui.regDone=m;toast('Member saved');render();return}
+  if(k==='renew'){const mo=ui.modal,m=S.members.find(x=>x.id===mo.id),p=availablePlan(mo.plan),rc=v('rn-r').trim();
     if(!rc)return setMsg(f,'Enter the receipt number for the cash payment.');if(S.payments.some(x=>x.receipt.toLowerCase()===rc.toLowerCase()))return setMsg(f,'That receipt number has already been used.');
-    const c=calcExpiry(memExpiry(m.id),T,p.days);S.payments.push({id:uid('pay'),memberId:m.id,planId:p.id,plan:p.name,amount:p.price,date:T,expiry:c.exp,receipt:rc,staff:ui.session.id});save();
+    const c=calcExpiry(memExpiry(m.id),T,p.days);S.payments.push(paymentFor(m,p,rc));save();
     ui.modal=null;ui.ciMsg={type:'good',text:`${fullName(m)} renewed. New expiry ${fmtL(c.exp)}.`};toast('Payment recorded');render();return}
   if(k==='svc'){const d=ui.draft;if(!d.name.trim())return setMsg(f,'Give the service a name.');if(!d.slots.length)return setMsg(f,'Add at least one time slot.');
     if(d.slots.some(s=>!s.days.length||!s.start||!s.end||s.end<=s.start))return setMsg(f,'Each time slot needs at least one day and an end time after the start time.');
     d.instructors=d.instructors.filter(i=>i.name.trim());const i=S.services.findIndex(s=>s.id===d.id);i>=0?S.services[i]=d:S.services.push(d);save();ui.draft=null;toast('Service saved. The public page is updated.');render();return}
-  if(k==='hours'){for(let i=0;i<6;i++){const o=v('hr-o'+i),c=v('hr-c'+i);if(!o||!c||c<=o)return setMsg(f,`${DAYF[i]}: closing time must be after opening time.`)}
-    for(let i=0;i<6;i++)S.hours[i]={open:v('hr-o'+i),close:v('hr-c'+i)};save();setMsg(f,'Opening hours saved. The public page is updated.','good');toast('Hours saved');return}
-  if(k==='override'){const d=v('ov-d'),cl=f.querySelector('#ov-closed').checked;if(!d)return setMsg(f,'Choose a date.');if(dow(d)===6)return setMsg(f,'Sundays are always closed. Choose another day.');
-    if(!cl&&v('ov-c')<=v('ov-o'))return setMsg(f,'Closing time must be after opening time.');S.overrides=S.overrides.filter(o=>o.date!==d);
-    S.overrides.push({id:uid('o'),date:d,closed:cl,open:v('ov-o'),close:v('ov-c'),reason:v('ov-r').trim(),by:ui.session.id});save();toast('Change added');render();return}
-  if(k==='notice'){const msg=v('nt-m').trim(),a=v('nt-a'),b=v('nt-b');if(!msg)return setMsg(f,'Write the message members should see.');if(!a||!b||b<a)return setMsg(f,'The end date must be on or after the start date.');
-    const svc=v('nt-s')||null;if(ui.noticeEdit){const n=S.notices.find(x=>x.id===ui.noticeEdit);Object.assign(n,{msg,svc,start:a,end:b,by:ui.session.id,at:nowStr()});ui.noticeEdit=null}
-    else S.notices.push({id:uid('n'),msg,svc,start:a,end:b,by:ui.session.id,at:nowStr()});save();toast('Notice saved. It shows on the public page.');render();return}
+  if(k==='hours'){const scope=f.dataset.scope||null,week=[];
+    if(scope&&!S.services.some(s=>s.id===scope))return setMsg(f,'Choose a valid area.');
+    for(let i=0;i<7;i++){const closed=f.querySelector('#hr-x'+i).checked,open=v('hr-o'+i),close=v('hr-c'+i);if(!closed&&(!open||!close||close<=open))return setMsg(f,`${DAYF[i]}: closing must be after opening.`);week.push({closed,open:closed?'':open,close:closed?'':close})}
+    const before=scope?S.areaHours[scope]||null:S.hours;audit('operating_times',scope||'gym','UPDATE',before,week);if(scope)S.areaHours[scope]=week;else S.hours=week;save();setMsg(f,'Opening hours saved.','good');toast('Hours saved');return}
+  if(k==='override'){const date=v('ov-d'),closed=f.querySelector('#ov-closed').checked,svc=v('ov-scope')||null,open=v('ov-o'),close=v('ov-c');
+    if(!date)return setMsg(f,'Choose a date.');if(svc&&!S.services.some(s=>s.id===svc))return setMsg(f,'Choose a valid area.');if(!closed&&(!open||!close||close<=open))return setMsg(f,'Closing time must be after opening time.');
+    const o=S.overrides.find(o=>!o.cancelled&&o.date===date&&(o.svc||null)===svc),before=o?{...o}:null;
+    const next={id:o?.id||uid('o'),date,svc,closed,open:closed?'':open,close:closed?'':close,reason:v('ov-r').trim(),by:o?.by||ui.session.id,at:o?.at||nowStr(),updatedBy:ui.session.id,updatedAt:nowStr()};
+    if(o)Object.assign(o,next);else S.overrides.push(next);audit('time_overrides',next.id,before?'UPDATE':'INSERT',before,next);save();toast('Date change saved');render();return}
+  if(k==='notice'){const msg=v('nt-m').trim(),start=v('nt-a'),end=v('nt-b'),svc=v('nt-s')||null;if(!msg)return setMsg(f,'Write the message members should see.');if(!start||!end||end<start)return setMsg(f,'The end date must be on or after the start date.');if(svc&&!S.services.some(s=>s.id===svc))return setMsg(f,'Choose a valid area.');
+    const n=S.notices.find(x=>x.id===ui.noticeEdit),before=n?{...n}:null;
+    if(ui.noticeEdit&&!n)return setMsg(f,'The notice no longer exists.');
+    const next={id:n?.id||uid('n'),msg,svc,start,end,by:n?.by||ui.session.id,at:n?.at||nowStr(),updatedBy:ui.session.id,updatedAt:nowStr()};if(n)Object.assign(n,next);else S.notices.push(next);audit('notices',next.id,before?'UPDATE':'INSERT',before,next);ui.noticeEdit=null;save();toast('Notice saved. Current and upcoming notices are public.');render();return}
   if(k==='contact'){S.contact={address:v('ct-a').trim(),phone:v('ct-p').trim(),email:v('ct-e').trim()};save();setMsg(f,'Contact details saved.','good');return}
-  if(k==='plans'){const np=S.plans.map((p,i)=>({...p,name:v('pl-n'+i).trim(),price:Math.max(0,+v('pl-p'+i)||0),days:Math.max(1,Math.round(+v('pl-d'+i)||1)),on:f.querySelector('#pl-o'+i).checked}));
-    if(np.some(p=>!p.name))return setMsg(f,'Every plan needs a name.');S.plans=np;save();setMsg(f,'Plans saved.','good');toast('Plans saved');return}
-  if(k==='mempw'){const pw=v('mp-pw');if(pw.length<6)return setMsg(f,'The password needs at least 6 characters.');const m=S.members.find(x=>x.id===f.dataset.id);m.pw=pw;m.fails=0;m.lock=0;save();f.querySelector('#mp-pw').value='';setMsg(f,'Password changed for '+fullName(m)+'.','good');return}
+  if(k==='plans'){const np=S.plans.map((p,i)=>({...p,name:v('pl-n'+i).trim(),price:v('pl-p'+i).trim()===''?NaN:Number(v('pl-p'+i)),days:v('pl-d'+i).trim()===''?NaN:Number(v('pl-d'+i)),on:f.querySelector('#pl-o'+i).checked}));
+    if(np.some(p=>!p.name))return setMsg(f,'Every plan needs a name.');if(np.some(p=>!Number.isFinite(p.price)||p.price<0||Math.abs(p.price*100-Math.round(p.price*100))>1e-6||!Number.isInteger(p.days)||p.days<1||p.days>3650))return setMsg(f,'Use a nonnegative price with at most two decimal places and a whole duration from 1 to 3650 days.');if(new Set(np.map(p=>p.name.toLowerCase())).size!==np.length)return setMsg(f,'Plan names must be unique.');audit('plans','catalogue','UPDATE',S.plans,np);S.plans=np;save();setMsg(f,'Plans saved.','good');toast('Plans saved');return}
+  if(k==='mempw'){const pw=v('mp-pw');if(pw.length<8)return setMsg(f,'The password needs at least 8 characters.');const m=S.members.find(x=>x.id===f.dataset.id);m.pw=pw;m.fails=0;m.lock=0;m.mustChangePassword=true;save();f.querySelector('#mp-pw').value='';setMsg(f,'Password changed for '+fullName(m)+'.','good');return}
   if(k==='staffmsg'){const msg=v('sm-m').trim(),to=v('sm-to');if(!msg)return setMsg(f,'Write the message first.');S.staffMsgs.push({id:uid('sm'),msg,to,by:ui.session.id,at:nowStr(),read:[]});save();toast(to==='all'?'Sent to all staff':'Sent to '+staffName(to));render();return}
-  if(k==='newstaff'){const n=v('ns-n').trim(),u=v('ns-u').trim().toLowerCase(),p=v('ns-p');if(!n||!u)return setMsg(f,'Enter a name and a username.');if(S.staff.some(x=>x.u===u))return setMsg(f,'That username is already taken.');if(p.length<6)return setMsg(f,'The password needs at least 6 characters.');
+  if(k==='newstaff'){const n=v('ns-n').trim(),u=v('ns-u').trim().toLowerCase(),p=v('ns-p');if(!n||!u)return setMsg(f,'Enter a name and a username.');if(S.staff.some(x=>x.u===u))return setMsg(f,'That username is already taken.');if(p.length<8)return setMsg(f,'The password needs at least 8 characters.');
     S.staff.push({u,name:n,role:'staff',pw:p,on:true});save();toast('Account created');render();return}
-});
-render();
+},e.target));
+let lastActivity=Date.now();
+for(const event of ['click','keydown','input'])document.addEventListener(event,()=>{lastActivity=Date.now()});
+if(typeof setInterval==='function')setInterval(()=>{if(ui.session&&Date.now()-lastActivity>(S.policy?.idleMinutes||15)*60*1000){if(API_MODE)serverLogout();else logout();toast('You were logged out after inactivity.')}},30000);
+installGuards();
+if(API_MODE)startServerMode();else render();
 </script>
 
 </body></html>

@@ -3,11 +3,11 @@
 **University of Eswatini | Practices in Software Engineering II (CSC491)**  
 **Team:** 4 members &nbsp;·&nbsp; **Project duration:** 5 weeks &nbsp;·&nbsp; **Platform:** Web application
 
-> **Project status:** Requirements and initial system-design documentation have been prepared. The revised ER and UML diagrams are a **proposed design baseline**, not final client approval. An interactive UI prototype and focused functional checks are available under `GMS/UI`. Backend integration, production authentication, and end-to-end acceptance have **not yet been verified**.
+> **Project status:** Requirements and initial system-design documentation have been prepared. The revised ER and UML diagrams are a **proposed design baseline**, not final client approval. The selected team UI and a connected Express/PostgreSQL application are available under `GMS/UI` and `GMS/Server`. Automated workflow/API checks are provided. Client policy sign-off, native database deployment, visual browser acceptance and production availability remain **unverified**.
 
 ## Interactive UI prototype
 
-The team's **selected Gym Management System interface** is available in [GMS/UI](UI/README.md). It contains staff, manager, member and public screens. Requirements fixes are being applied in order, beginning with suspension that preserves member and attendance history.
+The team's **selected Gym Management System interface** is available in [GMS/UI](UI/README.md). It contains staff, manager, member and public screens. Requirements fixes now include retained histories, report privacy, photo verification, plan editing, cash transactions, member editing and audited notices/hours. A server mode adds authenticated access and PostgreSQL enforcement.
 
 From the repository root, serve the interface with Python 3:
 
@@ -22,7 +22,7 @@ Open [http://localhost:8000](http://localhost:8000). See the UI README for demo 
 node tests/check-workflows.mjs
 ```
 
-The prototype uses HTML, CSS, JavaScript and browser-local sample data. The planned React/Express/PostgreSQL application is not yet connected to it. Demo sign-in and browser role guards are not production security. The 16 focused retention/suspension checks pass; full acceptance and visual browser testing remain unverified. See the [requirements-fix checklist](UI/REQUIREMENTS_FIXES.md) for the remaining work.
+The Python-served interface is a standalone demo using synthetic browser-local data. For the **connected application**, follow the [server setup](Server/README.md). Express provides server sessions, Argon2id passwords, protected photos, role checks and PostgreSQL transactions; the selected HTML/CSS/JavaScript design uses a separate API adapter. The proposed React port remains separate. Automated UI/API checks pass; full acceptance and visual browser testing remain unverified. See the [requirements-fix checklist](UI/REQUIREMENTS_FIXES.md) for the remaining work.
 
 ## Overview
 
@@ -65,7 +65,7 @@ The application also manages plans, cash payments, renewals, membership expiry, 
 
 | Layer | Technology |
 | --- | --- |
-| Frontend | React |
+| Frontend | Selected HTML/CSS/JavaScript UI; React remains a proposed port |
 | Backend | Node.js and Express |
 | Database | PostgreSQL |
 | API architecture | REST API with JSON |
@@ -78,7 +78,7 @@ The system is designed as a single responsive website, with role-specific interf
 
 ```mermaid
 flowchart TD
-    A[Public visitor / Member / Staff / Manager] --> B[React web application]
+    A[Public visitor / Member / Staff / Manager] --> B[Selected web interface]
     B -->|HTTPS and JSON| C[Express REST API]
     C --> D[Authentication and role checks]
     C --> E[Application services]
@@ -157,7 +157,7 @@ All four team members are expected to contribute code and review changes where p
 
 ## Setup and local development
 
-**Full application setup is pending frontend/backend integration.** Run the standalone UI prototype using the commands above. The remaining items below describe the planned production setup and do not claim that a React/Express application has been implemented.
+**For the connected application, use the [server setup](Server/README.md).** The Python commands above run the standalone demo. The remaining architecture/setup notes below describe the original proposed React design; the selected UI currently runs with HTML/CSS/JavaScript and the Express/PostgreSQL API.
 
 Once the implementation is committed, this section should document:
 
