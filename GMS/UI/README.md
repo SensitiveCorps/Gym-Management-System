@@ -2,7 +2,7 @@
 
 This folder now uses the team's selected interface from `Gym Management System_1.html`. Its blue-and-yellow design, public page and staff, manager and member screens are retained. The earlier Gymflow prototype is available in Git history.
 
-## Run in VS Code
+## Run the standalone demo in VS Code
 
 No package installation or build step is required. From the repository root, run this in a PowerShell terminal:
 
@@ -25,7 +25,15 @@ On macOS/Linux, use `python3` instead of `py`.
 
 Choose the matching sign-in tab. These are browser-local demo accounts, not production authentication. The prototype stores sample records and passwords in localStorage; use synthetic data only.
 
-## Step 1: preserve member history
+## Connected application
+
+To use shared PostgreSQL data, real server sign-in, protected photos and enforced staff/member permissions, follow [GMS/Server setup](../Server/README.md). It serves this same selected design at localhost:8000. It needs Node.js and a configured local PostgreSQL database; the Python command above runs only the synthetic demo.
+
+New UI controls include report privacy, required-photo entry, validated plans with Daily/Weekly/Monthly shortcuts, unavailable-plan empty states, atomic demo saves, member editing/photo replacement, forced temporary-password change, checkout attribution, upcoming notices, gym/area weekly hours and date overrides, and retained notice/hours audits.
+
+Expiry previews now match the database's proposed inclusive policy. Existing purchased dates are not rewritten. The client still needs to approve D07; Monthly is explicitly 30 days.
+
+## Retained member history
 
 Requirements: [SRS](../Docs/SRS.md) `FR-MEM-09`, `FR-HIS-01` and the suspension portion of `FR-HIS-03`.
 
@@ -48,13 +56,12 @@ From `GMS/UI`, with Node.js 18 or later:
 node tests/check-workflows.mjs
 ```
 
-The 16 checks execute the actual selected UI script and handlers with a minimal DOM and isolated synthetic storage. They cover single/bulk suspension, cancellation, retention, re-enable, check-in denial, role guards, reload compatibility and failed persistence.
+The 34 checks execute the actual selected UI script and handlers with a minimal DOM and isolated synthetic storage. They cover retention, suspension/re-enable, privacy, missing photos, plan validation, failed/partial saves, cash snapshots, expiry boundaries, member edits, temporary passwords, notice audits and override precedence. The API suite adds 35 HTTP/database checks, including the actual UI adapter.
 
 These checks verify this step's behavior; they are not full acceptance or visual browser testing.
 
-## Remaining work
+## Verification still needed
 
-See [REQUIREMENTS_FIXES.md](REQUIREMENTS_FIXES.md) for the ordered checklist. Report privacy, photo verification, plan validation, payment atomicity, date-policy alignment, member editing, notices/hours auditing and production API integration remain open.
+See [REQUIREMENTS_FIXES.md](REQUIREMENTS_FIXES.md) for implemented steps and [the acceptance checklist](../Server/ACCEPTANCE.md) for native PostgreSQL, backup/restore, browser/device, performance, staff usability and client-policy evidence still to collect. These are not marked complete by the automated tests.
 
-The selected interface is still one standalone HTML file with embedded CSS/JavaScript and a background image. Google Fonts is optional; local fallback fonts are defined. A shared database, secure password hashing, server authorization and protected photo storage have not been connected. Browser role checks do not provide server security.
-
+The standalone demo still stores synthetic passwords in localStorage. The connected application bypasses that storage and uses server sessions and Argon2id password hashes; private server records are never copied to demo storage. Google Fonts is optional and local fallback fonts are defined.
