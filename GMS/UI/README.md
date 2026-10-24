@@ -1,60 +1,60 @@
 # Gym Management System interface
 
-A buildless, interactive interface for the Gym Management System software engineering project. The visual design uses a green workspace, restrained typography and clear attendance and membership states.
+This folder now uses the team's selected interface from `Gym Management System_1.html`. Its blue-and-yellow design, public page and staff, manager and member screens are retained. The earlier Gymflow prototype is available in Git history.
 
-## Included workflows
+## Run in VS Code
 
-- Front-desk overview, searchable members and member details.
-- Member registration with a sample identity photo and initial cash receipt.
-- Cash renewals with unique receipt validation and payment-derived expiry.
-- Photo-confirmed entry, one open visit per member, refused-entry records and staff checkout.
-- Manager-only notice publication/cancellation, weekly hours, date overrides and an audit trail.
-- Public current/upcoming notices and resolved opening hours.
-- Member membership summary and own recent visits.
-- Attendance reports, CSV export and printable cash receipts.
+No package installation or build step is required. From the repository root, run this in a PowerShell terminal:
 
-The business-flow baseline is the revised Gym Management System diagrams version 3.0, dated 18 October 2026. The inclusive expiry arithmetic and receipt-number policy remain proposed. Closing-time automatic checkout is optional in the source and is not enabled in this interface.
-
-## Scope
-
-This is a browser-local prototype with clearly labelled sample data. Role preview is for demonstration, not authentication. Production sign-in, protected identity-file storage and a shared database are not connected. Sample passwords used for registration are discarded rather than retained. Do not use real personal information in the prototype.
-
-The member and public views do not render identity photographs. Reports exclude photographs. Front-desk and manager actions are guarded by the demo model as well as the visible controls; production authorization would need server enforcement.
-
-## Run the interface locally
-
-No dependency installation or build step is required. With Python 3 installed, run the following from the repository root:
-
-```bash
+```powershell
 cd GMS/UI
-python3 -m http.server 8000 --directory dist
+py -m http.server 8000 --directory dist
 ```
 
-Open [http://localhost:8000](http://localhost:8000). Keep that terminal running while you explore. Use **Preview as** to switch between Front desk, Manager, Member and Public visitor. Do not open `index.html` directly as a local file: the JavaScript modules require an HTTP server.
+Open [http://localhost:8000](http://localhost:8000). Keep that terminal running. If your terminal is already in `GMS/UI/dist`, run `py -m http.server 8000` there instead; do not append `GMS/UI` again.
 
-To run the checks, use Node.js 18 or later from `GMS/UI` in another terminal:
+On macOS/Linux, use `python3` instead of `py`.
+
+### Synthetic demonstration accounts
+
+| Role | Login | Password |
+| --- | --- | --- |
+| Manager | `manager` | `manager123` |
+| Staff | `vusi` or `nelisiwe` | `staff123` |
+| Member | Student ID, `202301234` | `member123` |
+
+Choose the matching sign-in tab. These are browser-local demo accounts, not production authentication. The prototype stores sample records and passwords in localStorage; use synthetic data only.
+
+## Step 1: preserve member history
+
+Requirements: [SRS](../Docs/SRS.md) `FR-MEM-09`, `FR-HIS-01` and the suspension portion of `FR-HIS-03`.
+
+- Inactive-member deletion has been replaced by confirmed single/bulk account suspension.
+- Members, photos, payment receipts, visits and denied attempts remain linked and searchable.
+- Authorized staff can suspend or enable from Members; inactive-page bulk actions are manager-only.
+- Account access remains separate from payment-derived plan, expiry and paid-member dashboard totals.
+- Suspended check-in attempts create a `SUSPENDED` denial and no visit.
+- Account changes record their actor and timestamp in the member detail history.
+- Status changes are published in memory only after their complete browser-storage write succeeds. A failed write shows an error and leaves the prior state intact.
+- Existing `gms-demo-v3` records load without a reset or a required status-history field.
+
+The existing `active` boolean is retained for compatibility: true means account enabled and false means suspended. Subscription validity is still derived from payments. Records already removed by an older copy cannot be recovered by this update.
+
+## Verification
+
+From `GMS/UI`, with Node.js 18 or later:
 
 ```bash
 node tests/check-workflows.mjs
 ```
 
-The tests use Node's built-in modules and require no npm installation. The original hosted Site configuration and Git metadata are excluded from this folder.
+The 16 checks execute the actual selected UI script and handlers with a minimal DOM and isolated synthetic storage. They cover single/bulk suspension, cancellation, retention, re-enable, check-in denial, role guards, reload compatibility and failed persistence.
 
-## Files
+These checks verify this step's behavior; they are not full acceptance or visual browser testing.
 
-- `dist/index.html`: application entry.
-- `dist/styles.css`: responsive styles and print layout.
-- `dist/model.mjs`: state, transactions, rules and data derivation.
-- `dist/app.js`: views and interaction handling.
-- `tests/check-workflows.mjs`: focused model and template checks.
+## Remaining work
 
-Run checks with Node:
+See [REQUIREMENTS_FIXES.md](REQUIREMENTS_FIXES.md) for the ordered checklist. Report privacy, photo verification, plan validation, payment atomicity, date-policy alignment, member editing, notices/hours auditing and production API integration remain open.
 
-```sh
-node tests/check-workflows.mjs
-```
-
-All assets are local. There is no build step. The hosting manifest declares `dist` as the static output directory.
-
-Browser visual QA was unavailable in the managed environment; functional model checks, executed UI templates and routing checks were used instead.
+The selected interface is still one standalone HTML file with embedded CSS/JavaScript and a background image. Google Fonts is optional; local fallback fonts are defined. A shared database, secure password hashing, server authorization and protected photo storage have not been connected. Browser role checks do not provide server security.
 
